@@ -89,7 +89,7 @@ export function HeroBanner({ item, loading }: HeroBannerProps) {
       </div>
 
       {/* Content */}
-      <div className="relative h-full flex flex-col justify-end p-8 pb-12 lg:p-12 lg:pb-16">
+      <div className="relative h-full flex flex-col justify-end p-5 sm:p-8 pb-10 sm:pb-12 lg:p-12 lg:pb-16">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
@@ -112,7 +112,7 @@ export function HeroBanner({ item, loading }: HeroBannerProps) {
           </div>
 
           {/* Title */}
-          <h1 className="text-4xl lg:text-6xl font-bold text-white tracking-tight leading-tight drop-shadow-2xl">
+          <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white tracking-tight leading-tight drop-shadow-2xl">
             {item.title}
           </h1>
 
@@ -134,9 +134,9 @@ export function HeroBanner({ item, loading }: HeroBannerProps) {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={handlePlay}
-              className="flex items-center gap-2.5 px-7 py-3.5 bg-[#E50914] rounded-xl text-white
+              className="flex items-center gap-2.5 px-5 sm:px-7 py-3 sm:py-3.5 bg-[#E50914] rounded-xl text-white
                        shadow-[0_0_30px_rgba(229,9,20,0.4)] hover:shadow-[0_0_45px_rgba(229,9,20,0.6)]
-                       hover:bg-[#ff1a25] transition-all duration-300"
+                       hover:bg-[#ff1a25] transition-all duration-300 w-full sm:w-auto justify-center"
             >
               <Play className="w-5 h-5" fill="currentColor" />
               <span className="text-sm font-semibold">Play Now</span>
@@ -146,8 +146,8 @@ export function HeroBanner({ item, loading }: HeroBannerProps) {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={handleWatchlist}
-              className={`flex items-center gap-2.5 px-7 py-3.5 backdrop-blur-xl rounded-xl
-                       text-white border transition-all duration-300
+              className={`flex items-center gap-2 px-4 sm:px-7 py-2.5 sm:py-3.5 backdrop-blur-xl rounded-xl
+                       text-white border transition-all duration-300 flex-1 sm:flex-none justify-center
                        ${inList
                          ? 'bg-[#E50914]/15 border-[#E50914]/30 hover:bg-[#E50914]/25'
                          : 'bg-white/8 border-white/15 hover:bg-white/12 hover:border-white/25'

@@ -14,7 +14,7 @@ import { DetailPage } from './pages/DetailPage';
 export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  // Collapse sidebar on small screens
+  // Collapse sidebar on medium screens
   useEffect(() => {
     const checkWidth = () => {
       setSidebarCollapsed(window.innerWidth < 1024);
@@ -31,7 +31,7 @@ export default function App() {
         <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
 
         {/* Main Content */}
-        <main className={`min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'ml-20' : 'ml-64'}`}>
+        <main className={`min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'md:ml-20' : 'md:ml-64'} pb-20 md:pb-0`}>
           {/* Header */}
           <header className="sticky top-0 z-40 backdrop-blur-xl bg-[#070707]/80 border-b border-white/5">
             <div className="flex items-center justify-between p-4 px-6">

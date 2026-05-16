@@ -40,7 +40,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const activeItem = getActiveItem();
 
   return (
-    <aside className={`fixed left-0 top-0 h-screen bg-[#0d0d0d]/95 backdrop-blur-2xl border-r border-white/5 flex flex-col z-50 transition-all duration-300 ${collapsed ? 'w-20' : 'w-64'}`}>
+    <>
+      {/* Desktop Sidebar */}
+      <aside className={`hidden md:flex fixed left-0 top-0 h-screen bg-[#0d0d0d]/95 backdrop-blur-2xl border-r border-white/5 flex-col z-50 transition-all duration-300 ${collapsed ? 'w-20' : 'w-64'}`}>
       {/* Logo & Toggle */}
       <div className="p-4 border-b border-white/5 flex items-center justify-between">
         {!collapsed && (
@@ -104,5 +106,24 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </div>
       </div>
     </aside>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0d0d0d]/95 backdrop-blur-2xl border-t border-white/10 z-50 flex items-center justify-around px-2 pb-2 pt-2">
+        {navItems.filter(item => item.id !== 'settings' && item.id !== 'trending').map((item) => {
+          const Icon = item.icon;
+          const isActive = activeItem === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => navigate(item.path)}
+              className={`flex flex-col items-center gap-1 p-2 min-w-[64px] ${isActive ? 'text-[#E50914]' : 'text-[#9A9A9A] hover:text-white'}`}
+            >
+              <Icon className="w-5 h-5" strokeWidth={isActive ? 2 : 1.5} />
+              <span className="text-[10px] font-medium">{item.label === 'Continue Watching' ? 'Continue' : item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </>
   );
 }
