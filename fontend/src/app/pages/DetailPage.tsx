@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { Play, Plus, Check, Star, Calendar, ArrowLeft, ChevronDown } from 'lucide-react';
+import { Play, Plus, Check, Star, Calendar, ArrowLeft, ChevronDown, Users } from 'lucide-react';
 import { motion } from 'motion/react';
 import { fetchLatestMovies, fetchLatestTVShows, getTVDetails, getSeasonEpisodes, getMovieDetails, mapTMDBToItem } from '../lib/api';
 import type { MovieItem, TVShowItem, EpisodeItem, TMDBEpisode, TMDBSeason } from '../lib/api';
@@ -132,6 +132,19 @@ export function DetailPage({ type }: DetailPageProps) {
     }
   };
 
+  const handleWatchParty = () => {
+    if (!id) return;
+    const randomRoomId = Math.random().toString(36).substring(2, 10).toUpperCase();
+    if (type === 'movie') {
+      navigate(`/watch/movie/${item?.imdb_id || id}?room=${randomRoomId}`);
+    } else if (episodes.length > 0) {
+      const ep = episodes[0];
+      navigate(`/watch/tv/${id}/${ep.season_number}/${ep.episode_number}?room=${randomRoomId}`);
+    } else {
+      navigate(`/watch/tv/${id}/1/1?room=${randomRoomId}`);
+    }
+  };
+
 
 
   if (loading) {
@@ -260,6 +273,16 @@ export function DetailPage({ type }: DetailPageProps) {
               >
                 <Play className="w-5 h-5" fill="currentColor" />
                 {type === 'movie' ? 'Play Movie' : 'Play S1:E1'}
+              </motion.button>
+
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleWatchParty}
+                className="flex items-center gap-2 px-6 py-3.5 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-xl text-white border border-white/15 transition-all duration-300 text-sm font-medium"
+              >
+                <Users className="w-5 h-5" />
+                Watch Party
               </motion.button>
 
               <motion.button
