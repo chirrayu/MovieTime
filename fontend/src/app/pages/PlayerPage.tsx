@@ -187,6 +187,29 @@ export function PlayerPage({ type }: PlayerPageProps) {
   }, [users]);
 
   // ----------------------------------------------------
+  // Host Simulated Progress fallbacks (for cross-origin iframe restriction)
+  // ----------------------------------------------------
+  const [localIsPlaying, setLocalIsPlaying] = useState(false);
+
+  useEffect(() => {
+    if (!localIsPlaying) return;
+    
+    const interval = setInterval(() => {
+      setCurrentProgress(prev => {
+        const next = prev + 1;
+        if (next >= currentDuration) {
+          setLocalIsPlaying(false);
+          return currentDuration;
+        }
+        return next;
+      });
+      setLastProgressUpdate(Date.now());
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [localIsPlaying, currentDuration]);
+
+  // ----------------------------------------------------
   // Embed URL setup
   // ----------------------------------------------------
   useEffect(() => {
@@ -231,12 +254,6 @@ export function PlayerPage({ type }: PlayerPageProps) {
     if (!id) return;
 
     async function loadMeta() {
-      const cached = getCachedItem(id!);
-      if (cached) {
-        setPlayerTitle(cached.title);
-        setPlayerPoster(cached.poster_url);
-        return;
-      }
       try {
         if (type === 'movie') {
           const detail = await getMovieDetails(id!);
@@ -244,6 +261,11 @@ export function PlayerPage({ type }: PlayerPageProps) {
           if (mapped) {
             setPlayerTitle(mapped.title);
             setPlayerPoster(mapped.poster_url);
+            if (detail.runtime) {
+              setCurrentDuration(detail.runtime * 60);
+            } else {
+              setCurrentDuration(120 * 60); // 2 hours default fallback
+            }
           }
         } else {
           const detail = await getTVDetails(id!);
@@ -251,10 +273,13 @@ export function PlayerPage({ type }: PlayerPageProps) {
           if (mapped) {
             setPlayerTitle(mapped.title);
             setPlayerPoster(mapped.poster_url);
+            // Default TV episode duration: 45 minutes
+            setCurrentDuration(45 * 60);
           }
         }
       } catch (err) {
         console.error('Failed to load meta:', err);
+        setCurrentDuration(120 * 60);
       }
     }
     loadMeta();
@@ -300,6 +325,32 @@ export function PlayerPage({ type }: PlayerPageProps) {
       value
     }, '*');
   }, []);
+
+  const handleProgressBarClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isHost) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const width = rect.width;
+    const percentage = clickX / width;
+    const targetProgress = Math.floor(percentage * currentDuration);
+    
+    setCurrentProgress(targetProgress);
+    sendPlayerCommand('seek', targetProgress);
+
+    if (socket) {
+      socket.emit('playback_action', {
+        roomId,
+        action: 'seek',
+        timestamp: targetProgress
+      });
+      socket.emit('force_sync', {
+        roomId,
+        timestamp: targetProgress,
+        isPlaying: localIsPlaying
+      });
+    }
+    toast.success(`Jumped playback to ${Math.floor(targetProgress / 60)}m ${targetProgress % 60}s`);
+  }, [isHost, currentDuration, socket, roomId, localIsPlaying, sendPlayerCommand]);
 
   // ----------------------------------------------------
   // Clean up WebRTC streams on unmount
@@ -568,18 +619,22 @@ export function PlayerPage({ type }: PlayerPageProps) {
 
     // Hard state reconciliation (unconditional forced sync from host)
     newSocket.on('force_sync_update', (pb: PlaybackState) => {
-      if (newSocket.id === hostIdRef.current) return;
-
       const elapsedHost = (Date.now() - pb.lastUpdateTime) / 1000;
       const targetTime = pb.timestamp + (pb.isPlaying ? elapsedHost : 0);
 
       console.log(`Unconditional Force Sync triggered by Host: target ${targetTime.toFixed(2)}s`);
-      sendPlayerCommand('seek', targetTime);
+      
+      // Instantly update guest progress state so progress bar aligns
+      setCurrentProgress(targetTime);
+      setLastProgressUpdate(Date.now());
+
       if (pb.isPlaying) {
         sendPlayerCommand('play');
       } else {
         sendPlayerCommand('pause');
       }
+      sendPlayerCommand('seek', targetTime);
+      
       toast.success("Force Synced with Host! 👑");
     });
 
@@ -1019,13 +1074,14 @@ export function PlayerPage({ type }: PlayerPageProps) {
           >
             <div className="px-4 pb-4 pt-8">
               {/* Progress bar */}
-              <div className="w-full h-1 bg-white/20 rounded-full overflow-hidden mb-2 cursor-pointer group">
+              <div 
+                onClick={handleProgressBarClick}
+                className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden mb-2 cursor-pointer group relative"
+              >
                 <div
                   className="h-full bg-[#E50914] rounded-full relative group-hover:h-1.5 transition-all"
                   style={{ width: `${progressPercent}%` }}
-                >
-                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-[#E50914] rounded-full shadow-[0_0_8px_rgba(229,9,20,0.8)] opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
+                />
               </div>
 
               {/* Time */}
@@ -1249,12 +1305,18 @@ export function PlayerPage({ type }: PlayerPageProps) {
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
+                          setLocalIsPlaying(true);
                           sendPlayerCommand('play');
                           if (socket) {
                             socket.emit('playback_action', {
                               roomId,
                               action: 'play',
                               timestamp: currentProgress
+                            });
+                            socket.emit('force_sync', {
+                              roomId,
+                              timestamp: currentProgress,
+                              isPlaying: true
                             });
                           }
                           toast.success("Broadcasted Play command!");
@@ -1266,12 +1328,18 @@ export function PlayerPage({ type }: PlayerPageProps) {
                       </button>
                       <button
                         onClick={() => {
+                          setLocalIsPlaying(false);
                           sendPlayerCommand('pause');
                           if (socket) {
                             socket.emit('playback_action', {
                               roomId,
                               action: 'pause',
                               timestamp: currentProgress
+                            });
+                            socket.emit('force_sync', {
+                              roomId,
+                              timestamp: currentProgress,
+                              isPlaying: false
                             });
                           }
                           toast.success("Broadcasted Pause command!");
@@ -1288,12 +1356,18 @@ export function PlayerPage({ type }: PlayerPageProps) {
                       <button
                         onClick={() => {
                           const newProgress = Math.max(0, currentProgress - 10);
+                          setCurrentProgress(newProgress);
                           sendPlayerCommand('seek', newProgress);
                           if (socket) {
                             socket.emit('playback_action', {
                               roomId,
                               action: 'seek',
                               timestamp: newProgress
+                            });
+                            socket.emit('force_sync', {
+                              roomId,
+                              timestamp: newProgress,
+                              isPlaying: localIsPlaying
                             });
                           }
                           toast.success("Broadcasted Rewind 10s!");
@@ -1306,12 +1380,18 @@ export function PlayerPage({ type }: PlayerPageProps) {
                       <button
                         onClick={() => {
                           const newProgress = Math.min(currentDuration, currentProgress + 10);
+                          setCurrentProgress(newProgress);
                           sendPlayerCommand('seek', newProgress);
                           if (socket) {
                             socket.emit('playback_action', {
                               roomId,
                               action: 'seek',
                               timestamp: newProgress
+                            });
+                            socket.emit('force_sync', {
+                              roomId,
+                              timestamp: newProgress,
+                              isPlaying: localIsPlaying
                             });
                           }
                           toast.success("Broadcasted Fast Forward 10s!");
@@ -1330,7 +1410,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
                           socket.emit('force_sync', {
                             roomId,
                             timestamp: currentProgress,
-                            isPlaying: currentDuration > 0 && currentProgress < currentDuration
+                            isPlaying: localIsPlaying
                           });
                           toast.success("Broadcasted Master State Sync!");
                         }
