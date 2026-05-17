@@ -566,6 +566,23 @@ export function PlayerPage({ type }: PlayerPageProps) {
       }
     });
 
+    // Hard state reconciliation (unconditional forced sync from host)
+    newSocket.on('force_sync_update', (pb: PlaybackState) => {
+      if (newSocket.id === hostIdRef.current) return;
+
+      const elapsedHost = (Date.now() - pb.lastUpdateTime) / 1000;
+      const targetTime = pb.timestamp + (pb.isPlaying ? elapsedHost : 0);
+
+      console.log(`Unconditional Force Sync triggered by Host: target ${targetTime.toFixed(2)}s`);
+      sendPlayerCommand('seek', targetTime);
+      if (pb.isPlaying) {
+        sendPlayerCommand('play');
+      } else {
+        sendPlayerCommand('pause');
+      }
+      toast.success("Force Synced with Host! 👑");
+    });
+
     // Receive embedded chat messages
     newSocket.on('new_message', (msg: PartyChatMessage) => {
       setChatMessages(prev => [...prev, msg]);
@@ -1310,7 +1327,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
                     <button
                       onClick={() => {
                         if (socket) {
-                          socket.emit('sync_state', {
+                          socket.emit('force_sync', {
                             roomId,
                             timestamp: currentProgress,
                             isPlaying: currentDuration > 0 && currentProgress < currentDuration

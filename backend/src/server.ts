@@ -114,6 +114,21 @@ io.on('connection', (socket: Socket) => {
     }
   });
 
+  // Hard State Sync: Unconditional synchronization forced by Host
+  socket.on('force_sync', ({ roomId, timestamp, isPlaying }: { roomId: string, timestamp: number, isPlaying: boolean }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    if (room.hostId === socket.id) {
+      room.playbackState.timestamp = timestamp;
+      room.playbackState.isPlaying = isPlaying;
+      room.playbackState.lastUpdateTime = Date.now();
+
+      // Hard sync for all client players
+      socket.to(roomId).emit('force_sync_update', room.playbackState);
+    }
+  });
+
   // Embedded chat functionality
   socket.on('send_message', ({ roomId, text }: { roomId: string, text: string }) => {
     const room = rooms[roomId];
