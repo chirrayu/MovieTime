@@ -5,15 +5,28 @@ import cors from 'cors';
 import { RoomState, User, ChatMessage } from './types';
 import { v4 as uuidv4 } from 'uuid';
 
+const ALLOWED_ORIGINS = [
+  'https://movie-time-orcin.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:5174',
+];
+
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: ALLOWED_ORIGINS,
+  methods: ['GET', 'POST'],
+  credentials: true
+}));
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*', // In production, replace with Vercel frontend URL
-    methods: ['GET', 'POST']
-  }
+    origin: ALLOWED_ORIGINS,
+    methods: ['GET', 'POST'],
+    credentials: true
+  },
+  // Allow both polling and websocket so the handshake works cross-origin
+  transports: ['polling', 'websocket']
 });
 
 // In-memory store for rooms
