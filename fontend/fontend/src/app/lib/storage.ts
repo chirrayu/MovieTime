@@ -51,8 +51,7 @@ export function getContinueWatching(): WatchProgress[] {
   const all = getAllWatchProgress();
   return Object.values(all)
     .filter(p => {
-      // Only include items with a valid title and not finished
-      if (!p.title || p.title.trim() === '') return false;
+      // Only show items not finished (less than 95% watched)
       const percent = p.duration > 0 ? (p.progress / p.duration) * 100 : 0;
       return percent < 95 && percent > 2;
     })

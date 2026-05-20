@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ArrowLeft, Maximize2, Minimize2, SkipForward, List, Globe, Users, MessageSquare, Send, Share2, Sparkles, AlertCircle, X, Shield, Play, Pause, RefreshCw, Volume2, VolumeX } from 'lucide-react';
+import { ArrowLeft, Maximize2, Minimize2, SkipForward, List, Globe, Users, MessageSquare, Send, Share2, Sparkles, AlertCircle, X, Shield, Play, Pause, RefreshCw } from 'lucide-react';
 import { getMovieEmbedUrl, getTVEmbedUrl, getMovieDetails, getTVDetails, mapTMDBToItem } from '../lib/api';
 import { getCachedItem } from '../lib/cache';
 import {
@@ -116,7 +116,6 @@ export function PlayerPage({ type }: PlayerPageProps) {
   const [currentDuration, setCurrentDuration] = useState(0);
   const [playerTitle, setPlayerTitle] = useState('');
   const [playerPoster, setPlayerPoster] = useState('');
-const [volume, setVolume] = useState(100);
   const [showLangDropdown, setShowLangDropdown] = useState(false);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -306,7 +305,7 @@ const [volume, setVolume] = useState(100);
   // ----------------------------------------------------
   // Controller: Post commands to Iframe Player
   // ----------------------------------------------------
-  const sendPlayerCommand = useCallback((action: 'play' | 'pause' | 'seek' | 'volume', value?: number) => {
+  const sendPlayerCommand = useCallback((action: 'play' | 'pause' | 'seek', value?: number) => {
     if (!iframeRef.current || !iframeRef.current.contentWindow) return;
     
     if (action === 'seek') {
@@ -374,11 +373,6 @@ const [volume, setVolume] = useState(100);
     if (!socket || !roomId) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-      // Apply current mic mute state to the newly acquired stream
-      if (isMicMuted) {
-        const audioTrack = stream.getAudioTracks()[0];
-        if (audioTrack) audioTrack.enabled = false;
-      }
       setLocalStream(stream);
       localStreamRef.current = stream;
       setInVideoCall(true);
@@ -420,15 +414,6 @@ const [volume, setVolume] = useState(100);
       if (audioTrack) {
         audioTrack.enabled = !audioTrack.enabled;
         setIsMicMuted(!audioTrack.enabled);
-        // Propagate the new audio track to all active peer connections
-        Object.values(peersRef.current).forEach((pc) => {
-          // Find existing audio sender(s) and replace their track
-          const audioSenders = pc.getSenders().filter((s) => s.track?.kind === 'audio');
-          audioSenders.forEach((sender) => {
-            // replaceTrack returns a promise; we ignore result but catch errors
-            sender.replaceTrack(audioTrack).catch(console.error);
-          });
-        });
       }
     }
   };
@@ -1078,33 +1063,6 @@ const [volume, setVolume] = useState(100);
               >
                 {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
               </button>
-
-              {/* Volume Controls */}
-              <div className="flex items-center gap-2 ml-2">
-                <button
-                  onClick={() => {
-                    const newVol = volume === 0 ? 100 : 0;
-                    setVolume(newVol);
-                    sendPlayerCommand('volume', newVol / 100);
-                  }}
-                  className="p-1.5 bg-white/10 rounded-full hover:bg-white/20 transition-colors"
-                  title={volume === 0 ? 'Unmute' : 'Mute'}
-                >
-                  {volume === 0 ? <VolumeX className="w-4 h-4 text-white" /> : <Volume2 className="w-4 h-4 text-white" />}
-                </button>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={volume}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setVolume(v);
-                    sendPlayerCommand('volume', v / 100);
-                  }}
-                  className="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
             </div>
           </div>
         </div>
@@ -1333,7 +1291,7 @@ const [volume, setVolume] = useState(100);
             ) : (
               <div className="flex flex-col gap-4">
                 {/* 👑 Host Control Pad (Only for Host) */}
-                {isHost && !inVideoCall && (
+                {isHost && (
                   <div className="p-3.5 bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20 rounded-xl flex flex-col gap-3 shadow-[0_4px_20px_rgba(245,158,11,0.05)]">
                     <div className="flex items-center gap-1.5 text-amber-500 font-bold text-xs uppercase tracking-wide">
                       <Shield className="w-3.5 h-3.5 animate-pulse" />
