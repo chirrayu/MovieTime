@@ -49,7 +49,7 @@ interface PlayerPageProps {
 }
 
 // Watch Party Backend URL
-const BACKEND_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3001';
+const BACKEND_URL = import.meta.env.VITE_WS_URL || 'https://movietime-mkwk.onrender.com';
 
 // ----------------------------------------------------
 // Sub-Component: VideoFeed
@@ -443,9 +443,10 @@ export function PlayerPage({ type }: PlayerPageProps) {
     setConnStatus('connecting');
 
     const newSocket = io(BACKEND_URL, {
-      transports: ['websocket'],
-      reconnectionAttempts: 5,
-      reconnectionDelay: 2000
+      transports: ['polling', 'websocket'],
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      timeout: 20000
     });
 
     setSocket(newSocket);
