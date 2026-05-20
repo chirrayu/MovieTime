@@ -193,6 +193,11 @@ io.on('connection', (socket: Socket) => {
 });
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`Watch Party Server running on port ${PORT}`);
-});
+// Only start the server listening port if we are NOT running in a serverless environment (Vercel)
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  server.listen(PORT, () => {
+    console.log(`Watch Party Server running on port ${PORT}`);
+  });
+}
+
+export default app;
