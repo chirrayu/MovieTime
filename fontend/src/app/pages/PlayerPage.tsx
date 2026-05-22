@@ -1538,13 +1538,16 @@ const [volume, setVolume] = useState(75);
               <p className="text-xs text-[#9A9A9A]">Enter a username to join your friends in this digital movie night.</p>
             </div>
 
-            <form onSubmit={handleUsernameSubmit} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3">
               <div className="flex gap-2">
                 <input
                   type="text"
                   placeholder="Create a nickname..."
                   value={username}
                   onChange={e => setUsername(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleUsernameSubmit(e as any);
+                  }}
                   maxLength={15}
                   required
                   className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder-[#5A5A5A] focus:outline-none focus:border-[#E50914] transition-all"
@@ -1582,7 +1585,7 @@ const [volume, setVolume] = useState(75);
                   Join Party
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}

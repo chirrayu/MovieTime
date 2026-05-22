@@ -10,6 +10,7 @@ import { ContinueWatchingPage } from './pages/ContinueWatchingPage';
 import { PlayerPage } from './pages/PlayerPage';
 import { SearchResultsPage } from './pages/SearchResultsPage';
 import { DetailPage } from './pages/DetailPage';
+import { Toaster } from './components/ui/sonner';
 
 export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -26,6 +27,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <Toaster />
       <div className="min-h-screen bg-[#070707] text-white">
         {/* Sidebar */}
         <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
