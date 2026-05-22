@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Maximize2, Minimize2, SkipForward, List, Globe, Users, MessageSquare, Send, Share2, Sparkles, AlertCircle, X, Shield, Play, Pause, RefreshCw, Volume2, VolumeX } from 'lucide-react';
 import { getMovieEmbedUrl, getTVEmbedUrl, getMovieDetails, getTVDetails, mapTMDBToItem } from '../lib/api';
 import { getCachedItem } from '../lib/cache';
