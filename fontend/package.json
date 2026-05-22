@@ -70,7 +70,6 @@
         "@vitejs/plugin-react": "4.7.0",
         "vite-plugin-pages": "^0.32.0",
         "@vitejs/plugin-react-swc": "^1.0.0",
-        //should work now
         "tailwindcss": "4.1.12",
         "vite": "6.3.5"
     },
