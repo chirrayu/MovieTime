@@ -116,7 +116,16 @@ export function PlayerPage({ type }: PlayerPageProps) {
   const [currentDuration, setCurrentDuration] = useState(0);
   const [playerTitle, setPlayerTitle] = useState('');
   const [playerPoster, setPlayerPoster] = useState('');
-const [volume, setVolume] = useState(100);
+const [volume, setVolume] = useState(75);
+
+  // Initialize player volume on mount
+  useEffect(() => {
+    // Ensure iframe is ready before sending volume command
+    const timer = setTimeout(() => {
+      sendPlayerCommand('volume', volume / 100);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, []);
   const [showLangDropdown, setShowLangDropdown] = useState(false);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -917,7 +926,11 @@ const [volume, setVolume] = useState(100);
   const handleUsernameSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) return;
-    localStorage.setItem('movietime_username', username);
+    try {
+      localStorage.setItem('movietime_username', username);
+    } catch (err) {
+      console.warn('Failed to save username to localStorage', err);
+    }
     setShowNameModal(false);
     toast.success(`Welcome, ${username}! Joining Watch Party...`);
   };
@@ -1562,6 +1575,7 @@ const [volume, setVolume] = useState(100);
                 </button>
                 <button
                   type="submit"
+                  onClick={handleUsernameSubmit}
                   disabled={!username.trim()}
                   className="flex-1 py-2.5 bg-[#E50914] hover:bg-[#b8070f] disabled:bg-[#5A5A5A]/30 text-white rounded-lg text-xs font-bold transition-all shadow-[0_4px_12px_rgba(229,9,20,0.3)] hover:scale-102 active:scale-98"
                 >

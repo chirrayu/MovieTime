@@ -478,6 +478,19 @@ export function PlayerPage({ type }: PlayerPageProps) {
         });
       }
 
+      // Debug: ICE connection state changes
+      pc.oniceconnectionstatechange = () => {
+        console.log(`ICE state for ${targetUserId}:`, pc.iceConnectionState);
+        toast.info(`Peer ${targetUserId} ICE: ${pc.iceConnectionState}`);
+      };
+
+      // Handle remote streams
+      pc.ontrack = (event) => {
+        const remoteStream = event.streams[0];
+        console.log('Received remote track from', targetUserId, remoteStream);
+        setRemoteStreams(prev => ({ ...prev, [targetUserId]: remoteStream }));
+      };
+
       // Handle ICE candidates
       pc.onicecandidate = (event) => {
         if (event.candidate) {
@@ -486,12 +499,6 @@ export function PlayerPage({ type }: PlayerPageProps) {
             signal: { candidate: event.candidate }
           });
         }
-      };
-
-      // Handle remote streams
-      pc.ontrack = (event) => {
-        const remoteStream = event.streams[0];
-        setRemoteStreams(prev => ({ ...prev, [targetUserId]: remoteStream }));
       };
 
       return pc;
@@ -665,6 +672,14 @@ export function PlayerPage({ type }: PlayerPageProps) {
       // If we are currently in call, initiate peer connection offer to new caller
       if (localStreamRef.current) {
         toast.info("Establishing video link...");
+        
+        // Timeout to notify if no video connection occurs
+        setTimeout(() => {
+          if (!peersRef.current[userId]) {
+            toast.error("Video connection attempt timed out.");
+          }
+        }, 10000);
+
         const pc = createPeerConnection(userId, newSocket);
         peersRef.current[userId] = pc;
         try {
@@ -916,7 +931,11 @@ export function PlayerPage({ type }: PlayerPageProps) {
   const handleUsernameSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) return;
-    localStorage.setItem('movietime_username', username);
+    try {
+      localStorage.setItem('movietime_username', username);
+    } catch (err) {
+      console.warn('Failed to save username to localStorage', err);
+    }
     setShowNameModal(false);
     toast.success(`Welcome, ${username}! Joining Watch Party...`);
   };
@@ -1160,89 +1179,70 @@ export function PlayerPage({ type }: PlayerPageProps) {
             </button>
             <button
               onClick={() => setActiveTab('call')}
-              className={`flex-1 py-3 text-center border-b-2 font-medium transition-all relative ${
-                activeTab === 'call' ? 'border-[#E50914] text-white bg-white/5' : 'border-transparent text-[#9A9A9A] hover:text-white'
-              }`}
-            >
-              Video Call
-              {inVideoCall && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />}
-            </button>
-            <button
-              onClick={() => setActiveTab('users')}
-              className={`flex-1 py-3 text-center border-b-2 font-medium transition-all ${
-                activeTab === 'users' ? 'border-[#E50914] text-white bg-white/5' : 'border-transparent text-[#9A9A9A] hover:text-white'
-              }`}
-            >
-              People ({activeUserCount})
-            </button>
-          </div>
+                className={`flex-1 py-3 text-center border-b-2 font-medium transition-all relative ${
+                  activeTab === 'call' ? 'border-[#E50914] text-white bg-white/5' : 'border-transparent text-[#9A9A9A] hover:text-white'
+                }`}
+              >
+                Video Call
+                {inVideoCall && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />}
+              </button>
+              <button
+                onClick={() => setActiveTab('users')}
+                className={`flex-1 py-3 text-center border-b-2 font-medium transition-all ${
+                  activeTab === 'users' ? 'border-[#E50914] text-white bg-white/5' : 'border-transparent text-[#9A9A9A] hover:text-white'
+                }`}
+              >
+                People ({activeUserCount})
+              </button>
+            </div>
 
-          {/* Content Area */}
-          <div className="flex-1 overflow-y-auto p-4 min-h-0 bg-[#080808]">
-            {activeTab === 'chat' ? (
-              <div className="flex flex-col gap-3 min-h-full justify-end">
-                {chatMessages.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center text-center py-12 text-[#5A5A5A] gap-2 my-auto">
-                    <MessageSquare className="w-8 h-8 opacity-40" />
-                    <p className="text-xs">No messages yet.<br />Say hello to the crew!</p>
-                  </div>
-                ) : (
-                  chatMessages.map(msg => (
-                    <div 
-                      key={msg.id} 
-                      className={`flex flex-col gap-1 text-xs max-w-[85%] ${
-                        msg.userId === socket?.id ? 'self-end items-end' : 'self-start items-start'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5 text-[10px] text-[#7A7A7A]">
-                        <span className="font-semibold text-white/80">{msg.username}</span>
-                        <span>•</span>
-                        <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                      <div className={`p-2.5 rounded-2xl ${
-                        msg.userId === socket?.id 
-                          ? 'bg-[#E50914] text-white rounded-tr-none shadow-[0_2px_8px_rgba(229,9,20,0.25)]' 
-                          : 'bg-white/10 text-white/90 rounded-tl-none border border-white/5'
-                      }`}>
-                        {msg.text}
-                      </div>
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto p-4 min-h-0 bg-[#080808]">
+              {activeTab === 'chat' ? (
+                <div className="flex flex-col gap-3 min-h-full justify-end">
+                  {chatMessages.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center text-center py-12 text-[#5A5A5A] gap-2 my-auto">
+                      <MessageSquare className="w-8 h-8 opacity-40" />
+                      <p className="text-xs">No messages yet.<br />Say hello to the crew!</p>
                     </div>
-                  ))
-                )}
-                <div ref={chatEndRef} />
-              </div>
-            ) : activeTab === 'call' ? (
-              <div className="flex flex-col gap-3 h-full justify-between">
-                <div className="flex-1 overflow-y-auto space-y-3 min-h-0 pb-4">
-                  {/* Local Video Feed */}
-                  {inVideoCall && localStream && (
-                    <VideoFeed
-                      stream={localStream}
-                      username={username}
-                      isLocal={true}
-                      muted={true} // Mutled local feed to prevent loops
-                      micMuted={isMicMuted}
-                      camOff={isCamOff}
-                    />
+                  ) : (
+                    chatMessages.map(msg => (
+                      <div 
+                        key={msg.id} 
+                        className={`flex flex-col gap-1 text-xs max-w-[85%] ${
+                          msg.userId === socket?.id ? 'self-end items-end' : 'self-start items-start'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 text-[10px] text-[#7A7A7A]">
+                          <span className="font-semibold text-white/80">{msg.username}</span>
+                          <span>•</span>
+                          <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <div className={`p-2.5 rounded-2xl ${
+                          msg.userId === socket?.id 
+                            ? 'bg-[#E50914] text-white rounded-tr-none shadow-[0_2px_8px_rgba(229,9,20,0.25)]' 
+                            : 'bg-white/10 text-white/90 rounded-tl-none border border-white/5'
+                        }`}>
+                          {msg.text}
+                        </div>
+                      </div>
+                    ))
                   )}
-
-                  {/* Remote Video Feeds */}
-                  {inVideoCall && Object.entries(remoteStreams).map(([peerId, rStream]) => {
-                    const peerUser = users[peerId];
-                    return (
+                  <div ref={chatEndRef} />
+                </div>
+              ) : activeTab === 'call' ? (
+                <div className="flex flex-col gap-3 h-full justify-between">
+                  <div className="flex-1 overflow-y-auto space-y-3 min-h-0 pb-4">
+                    {/* Local Video Feed */}
+                    {inVideoCall && localStream && (
                       <VideoFeed
-                        key={peerId}
-                        stream={rStream}
-                        username={peerUser ? peerUser.username : 'Participant'}
-                        isLocal={false}
-                        muted={false}
+                        stream={localStream}
+                        username={username}
+                        isLocal={true}
+                        muted={true} // Mutled local feed to prevent loops
+                        micMuted={isMicMuted}
+                        camOff={isCamOff}
                       />
-                    );
-                  })}
-
-                  {/* Call Waiting screen */}
-                  {inVideoCall && Object.keys(remoteStreams).length === 0 && (
-                    <div className="p-4 text-center border border-dashed border-white/5 rounded-xl bg-white/[0.01]">
                       <p className="text-[10px] text-[#5A5A5A] animate-pulse">Waiting for friends to join the call...</p>
                     </div>
                   )}

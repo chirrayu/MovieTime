@@ -1,34 +1,28 @@
 import { BrowserRouter, Routes, Route } from 'react-router';
-import { useState, useEffect } from 'react';
+import { useAppStore } from '../store/useAppStore';
 import { Sidebar } from './components/Sidebar';
 import { SearchBar } from './components/SearchBar';
-import { HomePage } from './pages/HomePage';
-import { MoviesPage } from './pages/MoviesPage';
-import { SeriesPage } from './pages/SeriesPage';
-import { WatchlistPage } from './pages/WatchlistPage';
-import { ContinueWatchingPage } from './pages/ContinueWatchingPage';
-import { PlayerPage } from './pages/PlayerPage';
-import { SearchResultsPage } from './pages/SearchResultsPage';
-import { DetailPage } from './pages/DetailPage';
+import { lazy, Suspense } from 'react';
+const HomePage = lazy(() => import('./pages/HomePage'));
+const MoviesPage = lazy(() => import('./pages/MoviesPage'));
+const SeriesPage = lazy(() => import('./pages/SeriesPage'));
+const WatchlistPage = lazy(() => import('./pages/WatchlistPage'));
+const ContinueWatchingPage = lazy(() => import('./pages/ContinueWatchingPage'));
+const PlayerPage = lazy(() => import('./pages/PlayerPage'));
+const SearchResultsPage = lazy(() => import('./pages/SearchResultsPage'));
+const DetailPage = lazy(() => import('./pages/DetailPage'));
 
 export default function App() {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // State moved to Zustand store
+  const { sidebarCollapsed, toggleSidebar } = useAppStore();
 
-  // Collapse sidebar on medium screens
-  useEffect(() => {
-    const checkWidth = () => {
-      setSidebarCollapsed(window.innerWidth < 1024);
-    };
-    checkWidth();
-    window.addEventListener('resize', checkWidth);
-    return () => window.removeEventListener('resize', checkWidth);
-  }, []);
+  // Collapse sidebar on medium screens handled in store via effect (will be added later)
 
   return (
     <BrowserRouter>
       <div className="min-h-screen bg-[#070707] text-white">
         {/* Sidebar */}
-        <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
+        <Sidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
 
         {/* Main Content */}
         <main className={`min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'md:ml-20' : 'md:ml-64'} pb-20 md:pb-0`}>
@@ -49,18 +43,20 @@ export default function App() {
 
           {/* Routes */}
           <div className="pb-20">
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/movies" element={<MoviesPage />} />
-              <Route path="/series" element={<SeriesPage />} />
-              <Route path="/watchlist" element={<WatchlistPage />} />
-              <Route path="/continue" element={<ContinueWatchingPage />} />
-              <Route path="/search" element={<SearchResultsPage />} />
-              <Route path="/movie/:id" element={<DetailPage type="movie" />} />
-              <Route path="/tv/:id" element={<DetailPage type="tv" />} />
-              <Route path="/watch/movie/:id" element={<PlayerPage type="movie" />} />
-              <Route path="/watch/tv/:id/:season/:episode" element={<PlayerPage type="tv" />} />
-            </Routes>
+            <Suspense fallback={<div className="flex items-center justify-center h-full"><span>Loading...</span></div>}>
+              <Routes>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/movies" element={<MoviesPage />} />
+                <Route path="/series" element={<SeriesPage />} />
+                <Route path="/watchlist" element={<WatchlistPage />} />
+                <Route path="/continue" element={<ContinueWatchingPage />} />
+                <Route path="/search" element={<SearchResultsPage />} />
+                <Route path="/movie/:id" element={<DetailPage type="movie" />} />
+                <Route path="/tv/:id" element={<DetailPage type="tv" />} />
+                <Route path="/watch/movie/:id" element={<PlayerPage type="movie" />} />
+                <Route path="/watch/tv/:id/:season/:episode" element={<PlayerPage type="tv" />} />
+              </Routes>
+            </Suspense>
           </div>
         </main>
       </div>
