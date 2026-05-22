@@ -1,6 +1,6 @@
 import { Home, TrendingUp, Film, Tv, Bookmark, Clock, Settings, Menu, X } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 interface NavItem {
   icon: React.ElementType;

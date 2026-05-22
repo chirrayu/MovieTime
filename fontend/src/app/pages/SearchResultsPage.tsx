@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router-dom';
 import { MovieCard } from '../components/MovieCard';
 import { searchMulti, mapTMDBToItem } from '../lib/api';
 import type { MovieItem, TVShowItem } from '../lib/api';

@@ -1,7 +1,7 @@
 import { Play, Plus, Star, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate } from 'react-router-dom';
 import { addToWatchlist, removeFromWatchlist, isInWatchlist } from '../lib/storage';
 
 interface MovieCardProps {
@@ -20,9 +20,10 @@ interface MovieCardProps {
   duration?: number;
 }
 
-export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, genre, type, progress, duration }: MovieCardProps) {
+export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster, poster_url, genre, type, progress, duration }: MovieCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [inList, setInList] = useState(isInWatchlist(tmdb_id || imdb_id));
+  const [imageLoaded, setImageLoaded] = useState(false);
   const navigate = useNavigate();
 
   const handlePlay = (e: React.MouseEvent) => {
@@ -69,16 +70,16 @@ export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, g
       {/* Movie Poster */}
       <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-[#1a1a1a]">
         {(poster || poster_url) ? (
-          <img
-            src={poster ?? poster_url}
-            alt={title}
-            className="w-full h-full object-cover transition-all duration-500"
-            loading="lazy"
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = '';
-              (e.target as HTMLImageElement).style.display = 'none';
-            }}
-          />
+          <>
+            {!imageLoaded && <div className="absolute inset-0 bg-gray-800 animate-pulse" />}
+            <img
+              src={poster ?? poster_url}
+              alt={title}
+              className="w-full h-full object-cover transition-all duration-500"
+              loading="lazy"
+              onLoad={() => setImageLoaded(true)}
+            />
+          </>
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#1a1a1a] to-[#0d0d0d]">
             <span className="text-[#333] text-4xl">🎬</span>

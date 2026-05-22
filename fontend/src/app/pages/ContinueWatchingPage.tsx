@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { getContinueWatching, removeWatchProgress } from '../lib/storage';
-import { useNavigate } from 'react-router';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Clock, Play, Trash2, X } from 'lucide-react';
 import { motion } from 'motion/react';
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Play, Plus, Check, Star, Calendar, ArrowLeft, ChevronDown, Users } from 'lucide-react';
 import { motion } from 'motion/react';
 import { fetchLatestMovies, fetchLatestTVShows, getTVDetails, getSeasonEpisodes, getMovieDetails, mapTMDBToItem } from '../lib/api';
