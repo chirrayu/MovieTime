@@ -522,12 +522,34 @@ const [volume, setVolume] = useState(75);
 
     newSocket.on('connect_error', () => {
       setConnStatus('disconnected');
-      toast.error('Watch party server connection failed.');
+      // Pause video locally when connection fails
+      sendPlayerCommand('pause');
+      setLocalIsPlaying(false);
+      toast.error('Watch party server connection failed. Playback paused.');
+    });
+
+    newSocket.on('error', (err) => {
+      console.error('Socket error:', err);
+      setConnStatus('disconnected');
+      // Pause video locally when a network error occurs
+      sendPlayerCommand('pause');
+      setLocalIsPlaying(false);
+      toast.error('Network error occurred. Playback paused.');
     });
 
     newSocket.on('disconnect', () => {
       setConnStatus('disconnected');
-      toast.error('Disconnected from watch party.');
+      // Pause video locally when connection drops
+      sendPlayerCommand('pause');
+      setLocalIsPlaying(false);
+      toast.error('Disconnected from watch party. Playback paused.');
+    });
+
+    newSocket.on('reconnect', () => {
+      setConnStatus('connected');
+      toast.success('Reconnected to watch party. Syncing playback...');
+      // Request latest state from server; server should emit 'room_state_update' on reconnect, but emit a ping just in case
+      newSocket.emit('request_sync', { roomId });
     });
 
     // Room state full sync (on join)
