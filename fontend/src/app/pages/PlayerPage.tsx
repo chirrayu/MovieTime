@@ -29,6 +29,12 @@ interface PlaybackState {
   mediaType?: 'movie' | 'tv';
 }
 
+interface SyncPayload {
+  roomId: string;
+  type: 'play' | 'pause' | 'seek';
+  currentTime: number;
+}
+
 interface PartyRoomState {
   roomId: string;
   hostId: string;
@@ -48,8 +54,10 @@ interface PlayerPageProps {
   type: 'movie' | 'tv';
 }
 
-// Watch Party Backend URL
-const BACKEND_URL = import.meta.env.VITE_WS_URL || 'https://movietime-mkwk.onrender.com';
+// Watch Party Backend URL — dev defaults to local backend (must match server port)
+const BACKEND_URL =
+  import.meta.env.VITE_WS_URL ||
+  (import.meta.env.DEV ? 'http://localhost:3002' : 'https://movietime-mkwk.onrender.com');
 
 // ----------------------------------------------------
 // Sub-Component: VideoFeed
@@ -65,13 +73,13 @@ interface VideoFeedProps {
 
 function VideoFeed({ stream, muted, username, isLocal, micMuted, camOff }: VideoFeedProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  
+
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.srcObject = stream;
     }
   }, [stream]);
-  
+
   return (
     <div className="relative rounded-xl overflow-hidden bg-black/60 aspect-video border border-white/5 shadow-inner flex items-center justify-center group transition-all hover:border-red-500/30">
       {camOff ? (
@@ -84,16 +92,19 @@ function VideoFeed({ stream, muted, username, isLocal, micMuted, camOff }: Video
           autoPlay
           playsInline
           muted={muted}
-          className="w-full h-full object-cover rounded-xl"
+          className="watch-party-video w-full h-full object-cover rounded-xl"
+          controlsList="nodownload noplaybackrate noremoteplayback"
+          disablePictureInPicture
+          disableRemotePlayback
         />
       )}
-      
+
       {/* Overlay Status Bar */}
       <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
         <span className="px-2 py-0.5 rounded bg-black/60 backdrop-blur-md text-[10px] text-white font-semibold">
           {username} {isLocal && '(You)'}
         </span>
-        
+
         <div className="flex gap-1">
           {micMuted && (
             <span className="p-1 rounded-md bg-red-600/90 text-white shadow-sm flex items-center justify-center">
@@ -116,7 +127,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
   const [currentDuration, setCurrentDuration] = useState(0);
   const [playerTitle, setPlayerTitle] = useState('');
   const [playerPoster, setPlayerPoster] = useState('');
-const [volume, setVolume] = useState(75);
+  const [volume, setVolume] = useState(75);
 
   // Initialize player volume on mount
   useEffect(() => {
@@ -156,12 +167,15 @@ const [volume, setVolume] = useState(75);
   });
   const [showNameModal, setShowNameModal] = useState<boolean>(!username && !!roomId);
   const [latency, setLatency] = useState<number>(0);
-  
+
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Sync correction states
   const [lastProgressUpdate, setLastProgressUpdate] = useState<number>(Date.now());
   const lastSeekTimeRef = useRef<number>(0);
+  const isRemoteUpdate = useRef(false);
+  const partyReadyRef = useRef(false);
+  const [hasJoinedParty, setHasJoinedParty] = useState(false);
 
   // ----------------------------------------------------
   // WebRTC Audio/Video Call States & Refs
@@ -171,7 +185,7 @@ const [volume, setVolume] = useState(75);
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isCamOff, setIsCamOff] = useState(false);
   const [inVideoCall, setInVideoCall] = useState(false);
-  
+
   const peersRef = useRef<Record<string, RTCPeerConnection>>({});
   const localStreamRef = useRef<MediaStream | null>(null);
 
@@ -180,6 +194,7 @@ const [volume, setVolume] = useState(75);
   const currentDurationRef = useRef(currentDuration);
   const lastProgressUpdateRef = useRef(lastProgressUpdate);
   const hostIdRef = useRef(hostId);
+  const isPlayingRef = useRef(false);
 
   useEffect(() => { currentProgressRef.current = currentProgress; }, [currentProgress]);
   useEffect(() => { currentDurationRef.current = currentDuration; }, [currentDuration]);
@@ -200,10 +215,24 @@ const [volume, setVolume] = useState(75);
   // Host Simulated Progress fallbacks (for cross-origin iframe restriction)
   // ----------------------------------------------------
   const [localIsPlaying, setLocalIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+
+  // User must click "Join Watch Party" (unlocks sync + guest apply)
+  const partyReady =
+    hasJoinedParty && !!roomId && !!username.trim() && !showNameModal;
 
   useEffect(() => {
-    if (!localIsPlaying) return;
-    
+    partyReadyRef.current = partyReady;
+  }, [partyReady]);
+
+  const canHostControl = isHost && partyReady && connStatus === 'connected' && !!socket;
+
+  useEffect(() => {
+    // Simulated progress only outside watch party (iframe reports real progress)
+    if (!localIsPlaying || roomId) return;
+
     const interval = setInterval(() => {
       setCurrentProgress(prev => {
         const next = prev + 1;
@@ -215,9 +244,9 @@ const [volume, setVolume] = useState(75);
       });
       setLastProgressUpdate(Date.now());
     }, 1000);
-    
+
     return () => clearInterval(interval);
-  }, [localIsPlaying, currentDuration]);
+  }, [localIsPlaying, currentDuration, roomId]);
 
   // ----------------------------------------------------
   // Embed URL setup
@@ -249,6 +278,10 @@ const [volume, setVolume] = useState(75);
     const handleUrlChange = () => {
       const rId = new URLSearchParams(window.location.search).get('room');
       setRoomId(rId);
+      if (!rId) {
+        setHasJoinedParty(false);
+        partyReadyRef.current = false;
+      }
       if (rId && !username) {
         setShowNameModal(true);
       }
@@ -315,52 +348,247 @@ const [volume, setVolume] = useState(75);
   // ----------------------------------------------------
   // Controller: Post commands to Iframe Player
   // ----------------------------------------------------
-  const sendPlayerCommand = useCallback((action: 'play' | 'pause' | 'seek' | 'volume', value?: number) => {
-    if (!iframeRef.current || !iframeRef.current.contentWindow) return;
-    
-    if (action === 'seek') {
-      lastSeekTimeRef.current = Date.now();
-    }
-    
-    // Structure 1: PLAYER_COMMAND structure
-    iframeRef.current.contentWindow.postMessage({
-      type: 'PLAYER_COMMAND',
-      data: { action, time: value, value }
-    }, '*');
-
-    // Structure 2: Fallback direct commands
-    iframeRef.current.contentWindow.postMessage({
-      key: 'player_command',
-      action,
-      value
-    }, '*');
+  const postToEmbedPlayer = useCallback((payload: object) => {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    win.postMessage(payload, '*');
   }, []);
 
+  const sendPlayerCommand = useCallback((action: 'play' | 'pause' | 'seek' | 'volume' | 'playbackRate' | 'hideControls', value?: number) => {
+    if (!iframeRef.current?.contentWindow) {
+      console.error('PLAYER_COMMAND failed: embed iframe not ready', { action, value });
+      return;
+    }
+    console.log('PLAYER_COMMAND', { action, value });
+
+    if (action === 'hideControls') {
+      postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'hideControls', value: true } });
+      postToEmbedPlayer({ key: 'player_command', action: 'hideControls', value: true });
+      postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'setChromeless', value: true } });
+      return;
+    }
+
+    if (action === 'playbackRate' && typeof value === 'number') {
+      postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'playbackRate', value } });
+      postToEmbedPlayer({ key: 'player_command', action: 'playbackRate', value });
+      return;
+    }
+
+    if (action === 'seek' && typeof value === 'number') {
+      lastSeekTimeRef.current = Date.now();
+      const time = value;
+      postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'seek', time } });
+      postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'seek', value: time } });
+      postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'seek', timestamp: time } });
+      postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'seek', currentTime: time } });
+      postToEmbedPlayer({ key: 'player_command', action: 'seek', value: time });
+      postToEmbedPlayer({ key: 'player_command', action: 'seek', time });
+      return;
+    }
+
+    if (action === 'play') {
+      postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'play' } });
+      postToEmbedPlayer({ key: 'player_command', action: 'play' });
+      return;
+    }
+
+    if (action === 'pause') {
+      postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'pause' } });
+      postToEmbedPlayer({ key: 'player_command', action: 'pause' });
+      return;
+    }
+
+    if (action === 'volume' && typeof value === 'number') {
+      postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'volume', value } });
+      postToEmbedPlayer({ key: 'player_command', action: 'volume', value });
+    }
+  }, [postToEmbedPlayer]);
+
+  const applyRemoteSync = useCallback((data: SyncPayload, source: string) => {
+    console.log('SYNC RECEIVED', {
+      source,
+      payload: data,
+      localTime: currentProgressRef.current,
+      receivedTime: data.currentTime,
+    });
+
+    if (!partyReadyRef.current) {
+      console.log('SYNC IGNORED: click Join Watch Party first');
+      return;
+    }
+
+    isRemoteUpdate.current = true;
+    const time = Math.max(0, data.currentTime);
+
+    setCurrentProgress(time);
+    setLastProgressUpdate(Date.now());
+    sendPlayerCommand('seek', time);
+
+    if (data.type === 'play') {
+      setIsPlaying(true);
+      setLocalIsPlaying(true);
+      sendPlayerCommand('play');
+      console.log({
+        action: 'APPLY play',
+        localTime: currentProgressRef.current,
+        receivedTime: data.currentTime,
+      });
+    } else if (data.type === 'pause') {
+      setIsPlaying(false);
+      setLocalIsPlaying(false);
+      sendPlayerCommand('pause');
+      console.log({
+        action: 'APPLY pause',
+        localTime: currentProgressRef.current,
+        receivedTime: data.currentTime,
+      });
+    } else {
+      console.log({
+        action: 'APPLY seek',
+        localTime: currentProgressRef.current,
+        receivedTime: data.currentTime,
+      });
+    }
+
+    setTimeout(() => {
+      isRemoteUpdate.current = false;
+    }, 200);
+  }, [sendPlayerCommand]);
+
+  const emitHostSync = useCallback((type: 'play' | 'pause' | 'seek', currentTime?: number) => {
+    if (!isHost) {
+      console.log('EMIT blocked: not host');
+      return;
+    }
+    if (!roomId || !socket || connStatus !== 'connected') {
+      console.log('EMIT blocked: not connected to party');
+      return;
+    }
+
+    const time = Math.max(
+      0,
+      Math.min(currentDurationRef.current || 0, currentTime ?? currentProgressRef.current)
+    );
+    const payload: SyncPayload = { roomId, type, currentTime: time };
+
+    console.log('EMIT', payload);
+
+    isRemoteUpdate.current = true;
+    setCurrentProgress(time);
+    setLastProgressUpdate(Date.now());
+
+    if (type === 'play') {
+      setIsPlaying(true);
+      setLocalIsPlaying(true);
+      sendPlayerCommand('play');
+    } else if (type === 'pause') {
+      setIsPlaying(false);
+      setLocalIsPlaying(false);
+      sendPlayerCommand('pause');
+    }
+    sendPlayerCommand('seek', time);
+
+    socket.emit('sync', payload);
+
+    setTimeout(() => {
+      isRemoteUpdate.current = false;
+    }, 200);
+  }, [isHost, roomId, socket, connStatus, sendPlayerCommand]);
+
+  const hideEmbedPlayerControls = useCallback(() => {
+    sendPlayerCommand('hideControls');
+  }, [sendPlayerCommand]);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe || !embedUrl) return;
+
+    const onLoad = () => {
+      hideEmbedPlayerControls();
+      setTimeout(hideEmbedPlayerControls, 400);
+      setTimeout(hideEmbedPlayerControls, 1500);
+    };
+
+    iframe.addEventListener('load', onLoad);
+    return () => iframe.removeEventListener('load', onLoad);
+  }, [embedUrl, hideEmbedPlayerControls]);
+
+  const togglePlayPause = useCallback(() => {
+    if (!canHostControl) {
+      if (roomId && !isHost) {
+        toast.info('Only the host controls playback');
+      } else if (roomId && !partyReady) {
+        toast.info('Join the watch party first');
+      }
+      return;
+    }
+    if (isRemoteUpdate.current) return;
+    if (isPlaying) {
+      emitHostSync('pause', currentProgressRef.current);
+    } else {
+      emitHostSync('play', currentProgressRef.current);
+    }
+  }, [canHostControl, roomId, isHost, partyReady, isPlaying, emitHostSync]);
+
+  const broadcastHostCommand = useCallback((
+    command: 'play' | 'pause' | 'seek',
+    seekTime?: number,
+    options?: { toastMessage?: string }
+  ) => {
+    if (!isHost) {
+      toast.error('Only the party host can control playback');
+      return;
+    }
+    if (!partyReady) {
+      toast.error('Enter your name and join the watch party first');
+      return;
+    }
+    emitHostSync(command, seekTime);
+    if (options?.toastMessage) {
+      toast.success(options.toastMessage);
+    }
+  }, [isHost, emitHostSync]);
+
+  const hostPlay = useCallback(() => {
+    broadcastHostCommand('play', currentProgressRef.current, { toastMessage: 'Broadcasted Play to the room' });
+  }, [broadcastHostCommand]);
+
+  const hostPause = useCallback(() => {
+    broadcastHostCommand('pause', currentProgressRef.current, { toastMessage: 'Broadcasted Pause to the room' });
+  }, [broadcastHostCommand]);
+
+  const hostSkip = useCallback((deltaSeconds: number) => {
+    const newTime = Math.max(
+      0,
+      Math.min(currentDurationRef.current, currentProgressRef.current + deltaSeconds)
+    );
+    broadcastHostCommand('seek', newTime, {
+      toastMessage: deltaSeconds < 0 ? 'Rewound 10 seconds for everyone' : 'Skipped forward 10 seconds for everyone',
+    });
+  }, [broadcastHostCommand]);
+
+  const hostForceSync = useCallback(() => {
+    if (!isHost || !partyReady) {
+      toast.error('Only the host can force sync after joining the party');
+      return;
+    }
+    const type = isPlayingRef.current ? 'play' : 'pause';
+    emitHostSync(type, currentProgressRef.current);
+    toast.success('Force-synced all guests to your timeline');
+  }, [isHost, partyReady, emitHostSync]);
+
   const handleProgressBarClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isHost) return;
+    if (!canHostControl) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const width = rect.width;
     const percentage = clickX / width;
     const targetProgress = Math.floor(percentage * currentDuration);
-    
-    setCurrentProgress(targetProgress);
-    sendPlayerCommand('seek', targetProgress);
 
-    if (socket) {
-      socket.emit('playback_action', {
-        roomId,
-        action: 'seek',
-        timestamp: targetProgress
-      });
-      socket.emit('force_sync', {
-        roomId,
-        timestamp: targetProgress,
-        isPlaying: localIsPlaying
-      });
-    }
-    toast.success(`Jumped playback to ${Math.floor(targetProgress / 60)}m ${targetProgress % 60}s`);
-  }, [isHost, currentDuration, socket, roomId, localIsPlaying, sendPlayerCommand]);
+    broadcastHostCommand('seek', targetProgress, {
+      toastMessage: `Jumped to ${Math.floor(targetProgress / 60)}m ${targetProgress % 60}s for everyone`,
+    });
+  }, [canHostControl, currentDuration, broadcastHostCommand]);
 
   // ----------------------------------------------------
   // Clean up WebRTC streams on unmount
@@ -391,7 +619,7 @@ const [volume, setVolume] = useState(75);
       setLocalStream(stream);
       localStreamRef.current = stream;
       setInVideoCall(true);
-      
+
       // Notify active room participants we joined the call
       socket.emit('join_call', { roomId });
       toast.success("Connected to video call!");
@@ -405,7 +633,7 @@ const [volume, setVolume] = useState(75);
     if (socket && roomId) {
       socket.emit('leave_call', { roomId });
     }
-    
+
     // Close local stream tracks
     if (localStream) {
       localStream.getTracks().forEach(track => track.stop());
@@ -413,7 +641,7 @@ const [volume, setVolume] = useState(75);
     setLocalStream(null);
     localStreamRef.current = null;
     setInVideoCall(false);
-    
+
     // Close peer connections
     Object.keys(peersRef.current).forEach(k => {
       peersRef.current[k].close();
@@ -510,7 +738,7 @@ const [volume, setVolume] = useState(75);
     newSocket.on('connect', () => {
       setConnStatus('connected');
       toast.success('Connected to watch party!');
-      
+
       // Join Room
       newSocket.emit('join_room', {
         roomId,
@@ -524,6 +752,7 @@ const [volume, setVolume] = useState(75);
       setConnStatus('disconnected');
       // Pause video locally when connection fails
       sendPlayerCommand('pause');
+      setIsPlaying(false);
       setLocalIsPlaying(false);
       toast.error('Watch party server connection failed. Playback paused.');
     });
@@ -533,6 +762,7 @@ const [volume, setVolume] = useState(75);
       setConnStatus('disconnected');
       // Pause video locally when a network error occurs
       sendPlayerCommand('pause');
+      setIsPlaying(false);
       setLocalIsPlaying(false);
       toast.error('Network error occurred. Playback paused.');
     });
@@ -541,36 +771,34 @@ const [volume, setVolume] = useState(75);
       setConnStatus('disconnected');
       // Pause video locally when connection drops
       sendPlayerCommand('pause');
+      setIsPlaying(false);
       setLocalIsPlaying(false);
       toast.error('Disconnected from watch party. Playback paused.');
     });
 
     newSocket.on('reconnect', () => {
       setConnStatus('connected');
-      toast.success('Reconnected to watch party. Syncing playback...');
-      // Request latest state from server; server should emit 'room_state_update' on reconnect, but emit a ping just in case
-      newSocket.emit('request_sync', { roomId });
+      toast.success('Reconnected to watch party');
+      newSocket.emit('join_room', { roomId, username, mediaId: id, mediaType: type });
     });
 
-    // Room state full sync (on join)
+    // Room state on join — guests apply host state once (no drift math)
     newSocket.on('room_state_update', (roomState: PartyRoomState) => {
       setUsers(roomState.users);
       setHostId(roomState.hostId);
-      
-      // Synchronize video state for newly joined users
-      const pb = roomState.playbackState;
-      if (newSocket.id !== roomState.hostId) {
-        // Calculate dynamic drift using update time
-        const elapsed = (Date.now() - pb.lastUpdateTime) / 1000;
-        const targetTime = pb.timestamp + (pb.isPlaying ? elapsed : 0);
-        
-        // Command play/pause and seek
-        if (pb.isPlaying) {
-          sendPlayerCommand('play');
-        } else {
-          sendPlayerCommand('pause');
-        }
-        sendPlayerCommand('seek', targetTime);
+      hostIdRef.current = roomState.hostId;
+
+      // Guests apply initial state only after explicit join (no drift math)
+      if (newSocket.id !== roomState.hostId && partyReadyRef.current) {
+        const pb = roomState.playbackState;
+        applyRemoteSync(
+          {
+            roomId: roomState.roomId,
+            type: pb.isPlaying ? 'play' : 'pause',
+            currentTime: pb.timestamp,
+          },
+          'room_state_update'
+        );
       }
     });
 
@@ -607,6 +835,7 @@ const [volume, setVolume] = useState(75);
     // Host changed
     newSocket.on('host_changed', (newHostId: string) => {
       setHostId(newHostId);
+      hostIdRef.current = newHostId;
       setUsers(prev => {
         const next = { ...prev };
         Object.keys(next).forEach(k => {
@@ -621,68 +850,13 @@ const [volume, setVolume] = useState(75);
       }
     });
 
-    // Playback state updates (Host authoritative trigger)
-    newSocket.on('playback_update', (pb: PlaybackState) => {
-      if (newSocket.id === hostIdRef.current) return; // Ignore host's own echo
-
-      if (pb.isPlaying) {
-        sendPlayerCommand('play');
-      } else {
-        sendPlayerCommand('pause');
-      }
-      sendPlayerCommand('seek', pb.timestamp);
-      toast.info(`Playback synced by Host`);
-    });
-
-    // Periodic state reconciliation (drift check)
-    newSocket.on('sync_update', (pb: PlaybackState) => {
-      if (newSocket.id === hostIdRef.current) return;
-
-      // Ignore sync updates if we recently performed a seek to allow player buffering
-      if (Date.now() - lastSeekTimeRef.current < 6000) {
+    // Single sync channel — guests receive and apply only (never emit)
+    newSocket.on('sync', (data: SyncPayload) => {
+      if (newSocket.id === hostIdRef.current) {
+        console.log('SYNC IGNORED on host (already applied locally before EMIT)');
         return;
       }
-
-      // Calculate elapsed time since our last local progress event
-      const elapsedLocal = (Date.now() - lastProgressUpdateRef.current) / 1000;
-      // Account for virtual progress locally since the last player progress update event
-      const virtualLocalProgress = currentProgressRef.current + (currentDurationRef.current > 0 && elapsedLocal < 5 ? elapsedLocal : 0);
-
-      // Soft self-correction of drift instead of hard jumping
-      const elapsedHost = (Date.now() - pb.lastUpdateTime) / 1000;
-      const targetTime = pb.timestamp + (pb.isPlaying ? elapsedHost : 0);
-      const drift = Math.abs(virtualLocalProgress - targetTime);
-
-      if (drift > 5) {
-        console.log(`Self-correcting drift: ${drift.toFixed(2)}s`);
-        sendPlayerCommand('seek', targetTime);
-        if (pb.isPlaying) {
-          sendPlayerCommand('play');
-        } else {
-          sendPlayerCommand('pause');
-        }
-      }
-    });
-
-    // Hard state reconciliation (unconditional forced sync from host)
-    newSocket.on('force_sync_update', (pb: PlaybackState) => {
-      const elapsedHost = (Date.now() - pb.lastUpdateTime) / 1000;
-      const targetTime = pb.timestamp + (pb.isPlaying ? elapsedHost : 0);
-
-      console.log(`Unconditional Force Sync triggered by Host: target ${targetTime.toFixed(2)}s`);
-      
-      // Instantly update guest progress state so progress bar aligns
-      setCurrentProgress(targetTime);
-      setLastProgressUpdate(Date.now());
-
-      if (pb.isPlaying) {
-        sendPlayerCommand('play');
-      } else {
-        sendPlayerCommand('pause');
-      }
-      sendPlayerCommand('seek', targetTime);
-      
-      toast.success("Force Synced with Host! 👑");
+      applyRemoteSync(data, 'sync');
     });
 
     // Receive embedded chat messages
@@ -762,44 +936,27 @@ const [volume, setVolume] = useState(75);
       newSocket.disconnect();
       clearInterval(pingInterval);
     };
-  }, [roomId, username, showNameModal, sendPlayerCommand, id, type]);
+  }, [roomId, username, showNameModal, sendPlayerCommand, applyRemoteSync, id, type]);
 
   // Autoscroll chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, sidebarOpen, activeTab]);
 
-  // ----------------------------------------------------
-  // Host Periodic Sync Emits
-  // ----------------------------------------------------
-  useEffect(() => {
-    if (!socket || !isHost || connStatus !== 'connected') return;
-
-    const syncInterval = setInterval(() => {
-      socket.emit('sync_state', {
-        roomId,
-        timestamp: currentProgress,
-        isPlaying: currentDuration > 0 && currentProgress < currentDuration
-      });
-    }, 3000);
-
-    return () => clearInterval(syncInterval);
-  }, [socket, isHost, currentProgress, currentDuration, roomId, connStatus]);
-
-  // ----------------------------------------------------
   // Setup player event listener for progress & state tracking
-  // ----------------------------------------------------
   useEffect(() => {
     if (!id) return;
 
     const cleanup = setupPlayerListener({
       onProgress: (progress, duration, info) => {
+        if (isRemoteUpdate.current) return;
+        setIsPlaying(true);
+        setLocalIsPlaying(true);
         setCurrentProgress(progress);
         setLastProgressUpdate(Date.now());
         setCurrentDuration(duration);
         if (info?.title) setPlayerTitle(info.title);
 
-        // Save progress to local storage
         saveWatchProgress({
           id,
           type,
@@ -812,40 +969,28 @@ const [volume, setVolume] = useState(75);
           episode: episodeNum,
         });
       },
-      onPause: (progress, info) => {
+      onPause: (progress) => {
+        if (isRemoteUpdate.current) return;
+        setIsPlaying(false);
+        setLocalIsPlaying(false);
         setCurrentProgress(progress);
-        
-        // If Host pauses, propagate
-        if (socket && isHost) {
-          socket.emit('playback_action', {
-            roomId,
-            action: 'pause',
-            timestamp: progress
-          });
-        }
+        // Host must use control pad / play button to broadcast — no auto-emit (prevents loops)
       },
-      onComplete: (info) => {
+      onComplete: () => {
         if (type === 'tv' && prefs.autoNextEpisode && seasonNum && episodeNum) {
           const nextEp = episodeNum + 1;
           navigate(`/watch/tv/${id}/${seasonNum}/${nextEp}${roomId ? `?room=${roomId}` : ''}`, { replace: true });
         }
       },
       onSeeked: (progress) => {
+        if (isRemoteUpdate.current) return;
         setCurrentProgress(progress);
-        
-        // If Host seeks, propagate
-        if (socket && isHost) {
-          socket.emit('playback_action', {
-            roomId,
-            action: 'seek',
-            timestamp: progress
-          });
-        }
+        // Host must use control pad / seek bar to broadcast — no auto-emit (prevents loops)
       },
     });
 
     return cleanup;
-  }, [id, type, seasonNum, episodeNum, playerTitle, currentDuration, prefs.autoNextEpisode, navigate, socket, isHost, roomId]);
+  }, [id, type, seasonNum, episodeNum, playerTitle, playerPoster, prefs.autoNextEpisode, navigate, roomId]);
 
   // Auto-hide player controls
   const resetControlsTimeout = useCallback(() => {
@@ -924,7 +1069,7 @@ const [volume, setVolume] = useState(75);
     const newUrl = `${window.location.pathname}?room=${randomRoomId}`;
     window.history.pushState({ path: newUrl }, '', newUrl);
     setRoomId(randomRoomId);
-    
+
     if (!username) {
       setShowNameModal(true);
     } else {
@@ -945,6 +1090,25 @@ const [volume, setVolume] = useState(75);
     setChatInput('');
   };
 
+  const handleJoinWatchParty = useCallback(() => {
+    if (!username.trim()) {
+      toast.error('Enter a username first');
+      return;
+    }
+    setHasJoinedParty(true);
+    partyReadyRef.current = true;
+    // Re-join so server sends room_state_update after sync is unlocked
+    if (socket?.connected && roomId) {
+      socket.emit('join_room', {
+        roomId,
+        username,
+        mediaId: id,
+        mediaType: type,
+      });
+    }
+    toast.success('Joined watch party — playback sync is active');
+  }, [username, socket, roomId, id, type]);
+
   const handleUsernameSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) return;
@@ -954,7 +1118,9 @@ const [volume, setVolume] = useState(75);
       console.warn('Failed to save username to localStorage', err);
     }
     setShowNameModal(false);
-    toast.success(`Welcome, ${username}! Joining Watch Party...`);
+    setHasJoinedParty(true);
+    partyReadyRef.current = true;
+    toast.success(`Welcome, ${username}! Join Watch Party to sync playback.`);
   };
 
   const generateRandomUsername = () => {
@@ -965,24 +1131,26 @@ const [volume, setVolume] = useState(75);
 
   return (
     <div className="flex h-[calc(100vh-65px)] w-full bg-black overflow-hidden relative font-sans">
-      
+
       {/* 1. Main Streaming Side */}
-      <div 
+      <div
         ref={containerRef}
         className="flex-1 relative bg-black h-full flex flex-col justify-between"
         onMouseMove={resetControlsTimeout}
         onClick={resetControlsTimeout}
       >
-        {/* Video Player Iframe */}
-        <iframe
-          ref={iframeRef}
-          src={embedUrl}
-          className="w-full h-full border-0 absolute inset-0 z-0"
-          allowFullScreen
-          sandbox="allow-same-origin allow-scripts allow-forms"
-          allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
-          title={type === 'movie' ? 'Movie Player' : `S${seasonNum}E${episodeNum}`}
-        />
+        {/* Video Player Iframe — native embed UI cropped/hidden; custom controls below */}
+        <div className="watch-player-embed absolute inset-0 z-0">
+          <iframe
+            ref={iframeRef}
+            src={embedUrl}
+            className="border-0"
+            allowFullScreen
+            sandbox="allow-same-origin allow-scripts allow-forms"
+            allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+            title={type === 'movie' ? 'Movie Player' : `S${seasonNum}E${episodeNum}`}
+          />
+        </div>
 
         {/* Top Controls Bar */}
         <div
@@ -1039,9 +1207,8 @@ const [volume, setVolume] = useState(75);
                   </button>
                   <button
                     onClick={() => setSidebarOpen(!sidebarOpen)}
-                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md transition-all text-xs font-medium ${
-                      sidebarOpen ? 'bg-[#E50914] text-white shadow-[0_0_8px_rgba(229,9,20,0.3)]' : 'bg-white/5 text-white hover:bg-white/15'
-                    }`}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md transition-all text-xs font-medium ${sidebarOpen ? 'bg-[#E50914] text-white shadow-[0_0_8px_rgba(229,9,20,0.3)]' : 'bg-white/5 text-white hover:bg-white/15'
+                      }`}
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Party Sidebar</span>
@@ -1095,9 +1262,8 @@ const [volume, setVolume] = useState(75);
                       <button
                         key={lang.code}
                         onClick={() => handleLangChange(lang.code)}
-                        className={`w-full px-4 py-2.5 text-xs text-left transition-colors ${
-                          currentLang === lang.code ? 'bg-[#E50914]/15 text-white' : 'text-[#9A9A9A] hover:bg-white/5 hover:text-white'
-                        }`}
+                        className={`w-full px-4 py-2.5 text-xs text-left transition-colors ${currentLang === lang.code ? 'bg-[#E50914]/15 text-white' : 'text-[#9A9A9A] hover:bg-white/5 hover:text-white'
+                          }`}
                       >
                         {lang.label}
                       </button>
@@ -1151,19 +1317,38 @@ const [volume, setVolume] = useState(75);
                        transition-all duration-500 z-10 ${showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}
           >
             <div className="px-4 pb-4 pt-8">
-              {/* Progress bar */}
-              <div 
-                onClick={handleProgressBarClick}
-                className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden mb-2 cursor-pointer group relative"
-              >
+              <div className="flex items-center gap-3 mb-2">
+                <button
+                  onClick={togglePlayPause}
+                  disabled={!!roomId && !canHostControl}
+                  className="p-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed rounded-full text-white transition-colors shrink-0"
+                  title={
+                    roomId && !isHost
+                      ? 'Only the host controls playback'
+                      : roomId && !partyReady
+                        ? 'Join Watch Party first'
+                        : isPlaying
+                          ? 'Pause'
+                          : 'Play'
+                  }
+                  aria-label={isPlaying ? 'Pause' : 'Play'}
+                >
+                  {isPlaying ? <Pause className="w-5 h-5" fill="currentColor" /> : <Play className="w-5 h-5" fill="currentColor" />}
+                </button>
+                {/* Progress bar */}
                 <div
-                  className="h-full bg-[#E50914] rounded-full relative group-hover:h-1.5 transition-all"
-                  style={{ width: `${progressPercent}%` }}
-                />
+                  onClick={handleProgressBarClick}
+                  className={`flex-1 h-1.5 bg-white/20 rounded-full overflow-hidden group relative ${canHostControl || !roomId ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                >
+                  <div
+                    className="h-full bg-[#E50914] rounded-full relative group-hover:h-1.5 transition-all"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
               </div>
 
               {/* Time */}
-              <div className="flex items-center justify-between text-xs text-[#9A9A9A]">
+              <div className="flex items-center justify-between text-xs text-[#9A9A9A] pl-11">
                 <span>{formatTime(currentProgress)}</span>
                 <span>{formatTime(currentDuration)}</span>
               </div>
@@ -1175,18 +1360,17 @@ const [volume, setVolume] = useState(75);
       {/* 2. Realtime Watch Party Sidebar */}
       {roomId && sidebarOpen && !showNameModal && (
         <div className="w-80 border-l border-white/5 bg-[#0a0a0a] flex flex-col h-full z-20 shrink-0 relative">
-          
+
           {/* Header */}
           <div className="p-4 border-b border-white/5 flex flex-col gap-2 bg-[#0d0d0d]">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className={`w-2.5 h-2.5 rounded-full ${
-                  connStatus === 'connected' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' :
-                  connStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'
-                }`} />
+                <div className={`w-2.5 h-2.5 rounded-full ${connStatus === 'connected' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' :
+                    connStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'
+                  }`} />
                 <span className="text-white text-sm font-semibold tracking-wide">WATCH PARTY</span>
               </div>
-              <button 
+              <button
                 onClick={() => setSidebarOpen(false)}
                 className="text-[#9A9A9A] hover:text-white transition-colors"
               >
@@ -1209,32 +1393,42 @@ const [volume, setVolume] = useState(75);
               <span>{isHost ? '👑 Party Host (You)' : '👥 Guest'}</span>
               {connStatus === 'connected' && <span>Ping: {latency}ms</span>}
             </div>
+
+            {connStatus === 'connected' && !partyReady && (
+              <button
+                type="button"
+                onClick={handleJoinWatchParty}
+                className="w-full py-2.5 bg-[#E50914] hover:bg-[#b8070f] text-white text-xs font-bold rounded-lg transition-all shadow-[0_4px_12px_rgba(229,9,20,0.3)]"
+              >
+                Join Watch Party
+              </button>
+            )}
+            {partyReady && (
+              <p className="text-[10px] text-emerald-500/90 px-1">Sync active — host controls play / pause / seek</p>
+            )}
           </div>
 
           {/* Tab Selection */}
           <div className="flex border-b border-white/5 text-xs bg-[#0b0b0b]">
             <button
               onClick={() => setActiveTab('chat')}
-              className={`flex-1 py-3 text-center border-b-2 font-medium transition-all ${
-                activeTab === 'chat' ? 'border-[#E50914] text-white bg-white/5' : 'border-transparent text-[#9A9A9A] hover:text-white'
-              }`}
+              className={`flex-1 py-3 text-center border-b-2 font-medium transition-all ${activeTab === 'chat' ? 'border-[#E50914] text-white bg-white/5' : 'border-transparent text-[#9A9A9A] hover:text-white'
+                }`}
             >
               Chat
             </button>
             <button
               onClick={() => setActiveTab('call')}
-              className={`flex-1 py-3 text-center border-b-2 font-medium transition-all relative ${
-                activeTab === 'call' ? 'border-[#E50914] text-white bg-white/5' : 'border-transparent text-[#9A9A9A] hover:text-white'
-              }`}
+              className={`flex-1 py-3 text-center border-b-2 font-medium transition-all relative ${activeTab === 'call' ? 'border-[#E50914] text-white bg-white/5' : 'border-transparent text-[#9A9A9A] hover:text-white'
+                }`}
             >
               Video Call
               {inVideoCall && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />}
             </button>
             <button
               onClick={() => setActiveTab('users')}
-              className={`flex-1 py-3 text-center border-b-2 font-medium transition-all ${
-                activeTab === 'users' ? 'border-[#E50914] text-white bg-white/5' : 'border-transparent text-[#9A9A9A] hover:text-white'
-              }`}
+              className={`flex-1 py-3 text-center border-b-2 font-medium transition-all ${activeTab === 'users' ? 'border-[#E50914] text-white bg-white/5' : 'border-transparent text-[#9A9A9A] hover:text-white'
+                }`}
             >
               People ({activeUserCount})
             </button>
@@ -1251,22 +1445,20 @@ const [volume, setVolume] = useState(75);
                   </div>
                 ) : (
                   chatMessages.map(msg => (
-                    <div 
-                      key={msg.id} 
-                      className={`flex flex-col gap-1 text-xs max-w-[85%] ${
-                        msg.userId === socket?.id ? 'self-end items-end' : 'self-start items-start'
-                      }`}
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col gap-1 text-xs max-w-[85%] ${msg.userId === socket?.id ? 'self-end items-end' : 'self-start items-start'
+                        }`}
                     >
                       <div className="flex items-center gap-1.5 text-[10px] text-[#7A7A7A]">
                         <span className="font-semibold text-white/80">{msg.username}</span>
                         <span>•</span>
                         <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
-                      <div className={`p-2.5 rounded-2xl ${
-                        msg.userId === socket?.id 
-                          ? 'bg-[#E50914] text-white rounded-tr-none shadow-[0_2px_8px_rgba(229,9,20,0.25)]' 
+                      <div className={`p-2.5 rounded-2xl ${msg.userId === socket?.id
+                          ? 'bg-[#E50914] text-white rounded-tr-none shadow-[0_2px_8px_rgba(229,9,20,0.25)]'
                           : 'bg-white/10 text-white/90 rounded-tl-none border border-white/5'
-                      }`}>
+                        }`}>
                         {msg.text}
                       </div>
                     </div>
@@ -1337,24 +1529,22 @@ const [volume, setVolume] = useState(75);
                   <div className="flex justify-around items-center bg-[#0d0d0d] border border-white/10 rounded-xl p-2 shadow-xl mt-auto z-10 shrink-0">
                     <button
                       onClick={toggleMic}
-                      className={`p-2.5 rounded-lg transition-all flex items-center justify-center ${
-                        isMicMuted ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-white/5 hover:bg-white/10 text-white/90'
-                      }`}
+                      className={`p-2.5 rounded-lg transition-all flex items-center justify-center ${isMicMuted ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-white/5 hover:bg-white/10 text-white/90'
+                        }`}
                       title={isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
                     >
                       {isMicMuted ? <AlertCircle className="w-4 h-4" /> : <Globe className="w-4 h-4" />}
                     </button>
-                    
+
                     <button
                       onClick={toggleCamera}
-                      className={`p-2.5 rounded-lg transition-all flex items-center justify-center ${
-                        isCamOff ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-white/5 hover:bg-white/10 text-white/90'
-                      }`}
+                      className={`p-2.5 rounded-lg transition-all flex items-center justify-center ${isCamOff ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-white/5 hover:bg-white/10 text-white/90'
+                        }`}
                       title={isCamOff ? 'Turn camera on' : 'Turn camera off'}
                     >
                       {isCamOff ? <X className="w-4 h-4" /> : <Users className="w-4 h-4" />}
                     </button>
-                    
+
                     <button
                       onClick={handleLeaveCall}
                       className="p-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all flex items-center justify-center hover:scale-105 active:scale-95 shadow-[0_2px_8px_rgba(220,38,38,0.3)]"
@@ -1368,13 +1558,13 @@ const [volume, setVolume] = useState(75);
             ) : (
               <div className="flex flex-col gap-4">
                 {/* 👑 Host Control Pad (Only for Host) */}
-                {isHost && !inVideoCall && (
+                {isHost && (
                   <div className="p-3.5 bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20 rounded-xl flex flex-col gap-3 shadow-[0_4px_20px_rgba(245,158,11,0.05)]">
                     <div className="flex items-center gap-1.5 text-amber-500 font-bold text-xs uppercase tracking-wide">
                       <Shield className="w-3.5 h-3.5 animate-pulse" />
                       <span>Host Control Pad</span>
                     </div>
-                    
+
                     <p className="text-[10px] text-[#7A7A7A] leading-relaxed">
                       Use these overrides to directly broadcast playback commands to all guests in the room.
                     </p>
@@ -1382,47 +1572,19 @@ const [volume, setVolume] = useState(75);
                     {/* Controls Row */}
                     <div className="flex gap-2">
                       <button
-                        onClick={() => {
-                          setLocalIsPlaying(true);
-                          sendPlayerCommand('play');
-                          if (socket) {
-                            socket.emit('playback_action', {
-                              roomId,
-                              action: 'play',
-                              timestamp: currentProgress
-                            });
-                            socket.emit('force_sync', {
-                              roomId,
-                              timestamp: currentProgress,
-                              isPlaying: true
-                            });
-                          }
-                          toast.success("Broadcasted Play command!");
-                        }}
-                        className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all hover:scale-102 flex items-center justify-center gap-1"
+                        type="button"
+                        onClick={hostPlay}
+                        disabled={!canHostControl}
+                        className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold transition-all hover:scale-102 flex items-center justify-center gap-1"
                         title="Broadcast Play"
                       >
                         <Play className="w-3 h-3" fill="currentColor" /> Play
                       </button>
                       <button
-                        onClick={() => {
-                          setLocalIsPlaying(false);
-                          sendPlayerCommand('pause');
-                          if (socket) {
-                            socket.emit('playback_action', {
-                              roomId,
-                              action: 'pause',
-                              timestamp: currentProgress
-                            });
-                            socket.emit('force_sync', {
-                              roomId,
-                              timestamp: currentProgress,
-                              isPlaying: false
-                            });
-                          }
-                          toast.success("Broadcasted Pause command!");
-                        }}
-                        className="flex-1 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-all hover:scale-102 flex items-center justify-center gap-1"
+                        type="button"
+                        onClick={hostPause}
+                        disabled={!canHostControl}
+                        className="flex-1 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold transition-all hover:scale-102 flex items-center justify-center gap-1"
                         title="Broadcast Pause"
                       >
                         <Pause className="w-3 h-3" fill="currentColor" /> Pause
@@ -1432,50 +1594,20 @@ const [volume, setVolume] = useState(75);
                     {/* Skip Row */}
                     <div className="flex gap-2">
                       <button
-                        onClick={() => {
-                          const newProgress = Math.max(0, currentProgress - 10);
-                          setCurrentProgress(newProgress);
-                          sendPlayerCommand('seek', newProgress);
-                          if (socket) {
-                            socket.emit('playback_action', {
-                              roomId,
-                              action: 'seek',
-                              timestamp: newProgress
-                            });
-                            socket.emit('force_sync', {
-                              roomId,
-                              timestamp: newProgress,
-                              isPlaying: localIsPlaying
-                            });
-                          }
-                          toast.success("Broadcasted Rewind 10s!");
-                        }}
-                        className="flex-1 py-2 bg-white/5 hover:bg-white/10 border border-white/5 text-white rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1"
-                        title="Rewind 10s"
+                        type="button"
+                        onClick={() => hostSkip(-10)}
+                        disabled={!canHostControl}
+                        className="flex-1 py-2 bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed border border-white/5 text-white rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1"
+                        title="Rewind 10s for everyone"
                       >
                         <ArrowLeft className="w-3 h-3" /> -10s
                       </button>
                       <button
-                        onClick={() => {
-                          const newProgress = Math.min(currentDuration, currentProgress + 10);
-                          setCurrentProgress(newProgress);
-                          sendPlayerCommand('seek', newProgress);
-                          if (socket) {
-                            socket.emit('playback_action', {
-                              roomId,
-                              action: 'seek',
-                              timestamp: newProgress
-                            });
-                            socket.emit('force_sync', {
-                              roomId,
-                              timestamp: newProgress,
-                              isPlaying: localIsPlaying
-                            });
-                          }
-                          toast.success("Broadcasted Fast Forward 10s!");
-                        }}
-                        className="flex-1 py-2 bg-white/5 hover:bg-white/10 border border-white/5 text-white rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1"
-                        title="Fast Forward 10s"
+                        type="button"
+                        onClick={() => hostSkip(10)}
+                        disabled={!canHostControl}
+                        className="flex-1 py-2 bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed border border-white/5 text-white rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1"
+                        title="Fast forward 10s for everyone"
                       >
                         +10s <SkipForward className="w-3 h-3" />
                       </button>
@@ -1483,17 +1615,11 @@ const [volume, setVolume] = useState(75);
 
                     {/* Sync Button */}
                     <button
-                      onClick={() => {
-                        if (socket) {
-                          socket.emit('force_sync', {
-                            roomId,
-                            timestamp: currentProgress,
-                            isPlaying: localIsPlaying
-                          });
-                          toast.success("Broadcasted Master State Sync!");
-                        }
-                      }}
-                      className="w-full py-1.5 bg-[#E50914] hover:bg-[#b8070f] text-white rounded-lg text-[10px] font-bold tracking-wide uppercase transition-all hover:scale-102 shadow-md flex items-center justify-center gap-1"
+                      type="button"
+                      onClick={hostForceSync}
+                      disabled={!canHostControl}
+                      className="w-full py-1.5 bg-[#E50914] hover:bg-[#b8070f] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-[10px] font-bold tracking-wide uppercase transition-all hover:scale-102 shadow-md flex items-center justify-center gap-1"
+                      title="Force all guests to your current time and play state"
                     >
                       <RefreshCw className="w-3 h-3 animate-spin" style={{ animationDuration: '3s' }} /> Force Sync Room
                     </button>
@@ -1589,7 +1715,8 @@ const [volume, setVolume] = useState(75);
                   type="button"
                   onClick={() => {
                     setShowNameModal(false);
-                    // Remove room query parameter to return to normal mode safely
+                    setHasJoinedParty(false);
+                    partyReadyRef.current = false;
                     const newUrl = window.location.pathname;
                     window.history.pushState({ path: newUrl }, '', newUrl);
                     setRoomId(null);
@@ -1604,7 +1731,7 @@ const [volume, setVolume] = useState(75);
                   disabled={!username.trim()}
                   className="flex-1 py-2.5 bg-[#E50914] hover:bg-[#b8070f] disabled:bg-[#5A5A5A]/30 text-white rounded-lg text-xs font-bold transition-all shadow-[0_4px_12px_rgba(229,9,20,0.3)] hover:scale-102 active:scale-98"
                 >
-                  Join Party
+                  Join Watch Party
                 </button>
               </div>
             </div>

@@ -14,6 +14,7 @@ export interface RoomState {
     isPlaying: boolean;
     timestamp: number;
     lastUpdateTime: number; // For calculating drift
+    playbackRate: number; // Playback speed factor
     mediaId?: string; // e.g. TMDB id
     mediaType?: 'movie' | 'tv';
   };

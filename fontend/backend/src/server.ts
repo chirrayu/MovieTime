@@ -89,57 +89,28 @@ io.on('connection', (socket: Socket) => {
     console.log(`User ${newUser.username} (${socket.id}) joined room ${roomId}`);
   });
 
-  // Handle playback controls (Host Only)
-  socket.on('playback_action', ({ roomId, action, timestamp }: { roomId: string, action: 'play' | 'pause' | 'seek', timestamp: number }) => {
-    const room = rooms[roomId];
-    if (!room) return;
+  socket.on('sync', (payload: { roomId: string; type: 'play' | 'pause' | 'seek'; currentTime: number }) => {
+    console.log('RECEIVED', payload, 'from', socket.id);
 
-    if (room.hostId !== socket.id) {
-      // Only host can control playback
+    const room = rooms[payload.roomId];
+    if (!room) {
+      console.log('REJECTED: room not found', payload.roomId);
       return;
     }
 
-    room.playbackState.timestamp = timestamp;
+    if (room.hostId !== socket.id) {
+      console.log('REJECTED: sender is not host', { hostId: room.hostId, sender: socket.id });
+      return;
+    }
+
+    room.playbackState.timestamp = payload.currentTime;
     room.playbackState.lastUpdateTime = Date.now();
+    if (payload.type === 'play') room.playbackState.isPlaying = true;
+    else if (payload.type === 'pause') room.playbackState.isPlaying = false;
 
-    if (action === 'play') {
-      room.playbackState.isPlaying = true;
-    } else if (action === 'pause') {
-      room.playbackState.isPlaying = false;
-    }
-
-    // Propagate authoritative state to all participants
-    io.to(roomId).emit('playback_update', room.playbackState);
-  });
-
-  // State reconciliation: Periodic sync from host
-  socket.on('sync_state', ({ roomId, timestamp, isPlaying }: { roomId: string, timestamp: number, isPlaying: boolean }) => {
-    const room = rooms[roomId];
-    if (!room) return;
-
-    if (room.hostId === socket.id) {
-      room.playbackState.timestamp = timestamp;
-      room.playbackState.isPlaying = isPlaying;
-      room.playbackState.lastUpdateTime = Date.now();
-
-      // Soft sync for all clients (they can compare this with their local state)
-      socket.to(roomId).emit('sync_update', room.playbackState);
-    }
-  });
-
-  // Hard State Sync: Unconditional synchronization forced by Host
-  socket.on('force_sync', ({ roomId, timestamp, isPlaying }: { roomId: string, timestamp: number, isPlaying: boolean }) => {
-    const room = rooms[roomId];
-    if (!room) return;
-
-    if (room.hostId === socket.id) {
-      room.playbackState.timestamp = timestamp;
-      room.playbackState.isPlaying = isPlaying;
-      room.playbackState.lastUpdateTime = Date.now();
-
-      // Hard sync for all client players
-      socket.to(roomId).emit('force_sync_update', room.playbackState);
-    }
+    const broadcast = { roomId: payload.roomId, type: payload.type, currentTime: payload.currentTime };
+    console.log('BROADCAST', broadcast);
+    socket.to(payload.roomId).emit('sync', broadcast);
   });
 
   // Embedded chat functionality

@@ -57,6 +57,7 @@ io.on('connection', (socket: Socket) => {
           isPlaying: false,
           timestamp: 0,
           lastUpdateTime: Date.now(),
+          playbackRate: 1,
           mediaId,
           mediaType
         }
@@ -64,17 +65,15 @@ io.on('connection', (socket: Socket) => {
       rooms[roomId] = room;
     }
 
-    const isHost = room.hostId === socket.id || Object.keys(room.users).length === 0;
-    
-    // In case the host left and someone else joins, or it's the first user
-    if (isHost && room.hostId !== socket.id) {
-        room.hostId = socket.id;
+    // First user in a new room is host; hostId is fixed until host disconnects
+    if (Object.keys(room.users).length === 0) {
+      room.hostId = socket.id;
     }
 
     const newUser: User = {
       id: socket.id,
       username: username || `User-${socket.id.substring(0, 4)}`,
-      isHost
+      isHost: room.hostId === socket.id,
     };
 
     room.users[socket.id] = newUser;
@@ -89,57 +88,49 @@ io.on('connection', (socket: Socket) => {
     console.log(`User ${newUser.username} (${socket.id}) joined room ${roomId}`);
   });
 
-  // Handle playback controls (Host Only)
-  socket.on('playback_action', ({ roomId, action, timestamp }: { roomId: string, action: 'play' | 'pause' | 'seek', timestamp: number }) => {
-    const room = rooms[roomId];
-    if (!room) return;
+  // -------------------------------------------------------------------------
+  // Watch party playback sync — single event, host-only authority
+  // -------------------------------------------------------------------------
+  socket.on('sync', (payload: { roomId?: string; type?: string; currentTime?: number }) => {
+    console.log('RECEIVED', payload, 'from', socket.id);
 
-    if (room.hostId !== socket.id) {
-      // Only host can control playback
+    if (
+      !payload?.roomId ||
+      !payload?.type ||
+      typeof payload.currentTime !== 'number' ||
+      !['play', 'pause', 'seek'].includes(payload.type)
+    ) {
+      console.log('REJECTED: invalid sync payload', payload);
       return;
     }
 
-    room.playbackState.timestamp = timestamp;
-    room.playbackState.lastUpdateTime = Date.now();
+    const room = rooms[payload.roomId];
+    if (!room) {
+      console.log('REJECTED: room not found', payload.roomId);
+      return;
+    }
 
-    if (action === 'play') {
+    if (room.hostId !== socket.id) {
+      console.log('REJECTED: sender is not host', { hostId: room.hostId, sender: socket.id });
+      return;
+    }
+
+    room.playbackState.timestamp = payload.currentTime;
+    room.playbackState.lastUpdateTime = Date.now();
+    if (payload.type === 'play') {
       room.playbackState.isPlaying = true;
-    } else if (action === 'pause') {
+    } else if (payload.type === 'pause') {
       room.playbackState.isPlaying = false;
     }
 
-    // Propagate authoritative state to all participants
-    io.to(roomId).emit('playback_update', room.playbackState);
-  });
-
-  // State reconciliation: Periodic sync from host
-  socket.on('sync_state', ({ roomId, timestamp, isPlaying }: { roomId: string, timestamp: number, isPlaying: boolean }) => {
-    const room = rooms[roomId];
-    if (!room) return;
-
-    if (room.hostId === socket.id) {
-      room.playbackState.timestamp = timestamp;
-      room.playbackState.isPlaying = isPlaying;
-      room.playbackState.lastUpdateTime = Date.now();
-
-      // Soft sync for all clients (they can compare this with their local state)
-      socket.to(roomId).emit('sync_update', room.playbackState);
-    }
-  });
-
-  // Hard State Sync: Unconditional synchronization forced by Host
-  socket.on('force_sync', ({ roomId, timestamp, isPlaying }: { roomId: string, timestamp: number, isPlaying: boolean }) => {
-    const room = rooms[roomId];
-    if (!room) return;
-
-    if (room.hostId === socket.id) {
-      room.playbackState.timestamp = timestamp;
-      room.playbackState.isPlaying = isPlaying;
-      room.playbackState.lastUpdateTime = Date.now();
-
-      // Hard sync for all client players
-      socket.to(roomId).emit('force_sync_update', room.playbackState);
-    }
+    const broadcast = {
+      roomId: payload.roomId,
+      type: payload.type,
+      currentTime: payload.currentTime,
+    };
+    console.log('BROADCAST', broadcast);
+    // Guests only — host already applied locally before EMIT
+    socket.to(payload.roomId).emit('sync', broadcast);
   });
 
   // Embedded chat functionality
@@ -205,9 +196,27 @@ io.on('connection', (socket: Socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3002;
+const PORT = Number(process.env.PORT) || 3002;
+
+function shutdown(_signal: string) {
+  server.close(() => {
+    io.close(() => process.exit(0));
+  });
+}
+
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGUSR2'] as const) {
+  process.once(signal, () => shutdown(signal));
+}
+
 // Only start the server listening port if we are NOT running in a serverless environment (Vercel)
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use. Stop the other process or set PORT to a different value.`);
+    }
+    process.exit(1);
+  });
+
   server.listen(PORT, () => {
     console.log(`Watch Party Server running on port ${PORT}`);
   });
