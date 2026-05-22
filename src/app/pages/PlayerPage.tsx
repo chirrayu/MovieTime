@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ArrowLeft, Maximize2, Minimize2, SkipForward, List, Globe, Users, MessageSquare, Send, Share2, Sparkles, AlertCircle, X, Shield, Play, Pause, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Maximize2, Minimize2, SkipForward, List, Globe, Users, MessageSquare, Send, Share2, Sparkles, AlertCircle, X, Shield, Play, Pause, RefreshCw, Volume2, VolumeX } from 'lucide-react';
 import { getMovieEmbedUrl, getTVEmbedUrl, getMovieDetails, getTVDetails, mapTMDBToItem } from '../lib/api';
 import { getCachedItem } from '../lib/cache';
 import {
@@ -116,6 +116,16 @@ export function PlayerPage({ type }: PlayerPageProps) {
   const [currentDuration, setCurrentDuration] = useState(0);
   const [playerTitle, setPlayerTitle] = useState('');
   const [playerPoster, setPlayerPoster] = useState('');
+const [volume, setVolume] = useState(75);
+
+  // Initialize player volume on mount
+  useEffect(() => {
+    // Ensure iframe is ready before sending volume command
+    const timer = setTimeout(() => {
+      sendPlayerCommand('volume', volume / 100);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, []);
   const [showLangDropdown, setShowLangDropdown] = useState(false);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -305,7 +315,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
   // ----------------------------------------------------
   // Controller: Post commands to Iframe Player
   // ----------------------------------------------------
-  const sendPlayerCommand = useCallback((action: 'play' | 'pause' | 'seek', value?: number) => {
+  const sendPlayerCommand = useCallback((action: 'play' | 'pause' | 'seek' | 'volume', value?: number) => {
     if (!iframeRef.current || !iframeRef.current.contentWindow) return;
     
     if (action === 'seek') {
@@ -916,7 +926,11 @@ export function PlayerPage({ type }: PlayerPageProps) {
   const handleUsernameSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) return;
-    localStorage.setItem('movietime_username', username);
+    try {
+      localStorage.setItem('movietime_username', username);
+    } catch (err) {
+      console.warn('Failed to save username to localStorage', err);
+    }
     setShowNameModal(false);
     toast.success(`Welcome, ${username}! Joining Watch Party...`);
   };
@@ -1077,6 +1091,33 @@ export function PlayerPage({ type }: PlayerPageProps) {
               >
                 {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
               </button>
+
+              {/* Volume Controls */}
+              <div className="flex items-center gap-2 ml-2">
+                <button
+                  onClick={() => {
+                    const newVol = volume === 0 ? 100 : 0;
+                    setVolume(newVol);
+                    sendPlayerCommand('volume', newVol / 100);
+                  }}
+                  className="p-1.5 bg-white/10 rounded-full hover:bg-white/20 transition-colors"
+                  title={volume === 0 ? 'Unmute' : 'Mute'}
+                >
+                  {volume === 0 ? <VolumeX className="w-4 h-4 text-white" /> : <Volume2 className="w-4 h-4 text-white" />}
+                </button>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={volume}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setVolume(v);
+                    sendPlayerCommand('volume', v / 100);
+                  }}
+                  className="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -1305,7 +1346,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
             ) : (
               <div className="flex flex-col gap-4">
                 {/* 👑 Host Control Pad (Only for Host) */}
-                {isHost && (
+                {isHost && !inVideoCall && (
                   <div className="p-3.5 bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20 rounded-xl flex flex-col gap-3 shadow-[0_4px_20px_rgba(245,158,11,0.05)]">
                     <div className="flex items-center gap-1.5 text-amber-500 font-bold text-xs uppercase tracking-wide">
                       <Shield className="w-3.5 h-3.5 animate-pulse" />
@@ -1497,13 +1538,16 @@ export function PlayerPage({ type }: PlayerPageProps) {
               <p className="text-xs text-[#9A9A9A]">Enter a username to join your friends in this digital movie night.</p>
             </div>
 
-            <form onSubmit={handleUsernameSubmit} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3">
               <div className="flex gap-2">
                 <input
                   type="text"
                   placeholder="Create a nickname..."
                   value={username}
                   onChange={e => setUsername(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleUsernameSubmit(e as any);
+                  }}
                   maxLength={15}
                   required
                   className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder-[#5A5A5A] focus:outline-none focus:border-[#E50914] transition-all"
@@ -1534,13 +1578,14 @@ export function PlayerPage({ type }: PlayerPageProps) {
                 </button>
                 <button
                   type="submit"
+                  onClick={handleUsernameSubmit}
                   disabled={!username.trim()}
                   className="flex-1 py-2.5 bg-[#E50914] hover:bg-[#b8070f] disabled:bg-[#5A5A5A]/30 text-white rounded-lg text-xs font-bold transition-all shadow-[0_4px_12px_rgba(229,9,20,0.3)] hover:scale-102 active:scale-98"
                 >
                   Join Party
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}

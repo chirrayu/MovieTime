@@ -10,7 +10,8 @@ interface MovieCardProps {
   title: string;
   year: string;
   rating: string;
-  poster_url: string;
+  poster_url?: string; // legacy prop
+  poster?: string; // new prop
   genre?: string;
   type: 'movie' | 'tv';
   embed_url?: string;
@@ -67,9 +68,9 @@ export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, g
     >
       {/* Movie Poster */}
       <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-[#1a1a1a]">
-        {poster_url ? (
+        {(poster || poster_url) ? (
           <img
-            src={poster_url}
+            src={poster ?? poster_url}
             alt={title}
             className="w-full h-full object-cover transition-all duration-500"
             loading="lazy"
@@ -82,7 +83,7 @@ export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, g
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#1a1a1a] to-[#0d0d0d]">
             <span className="text-[#333] text-4xl">🎬</span>
           </div>
-        )}
+        )
 
         {/* Rating Badge */}
         {rating && parseFloat(rating) > 0 && (
