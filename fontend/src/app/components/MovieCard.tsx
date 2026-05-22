@@ -83,7 +83,7 @@ export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, g
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#1a1a1a] to-[#0d0d0d]">
             <span className="text-[#333] text-4xl">🎬</span>
           </div>
-        )
+        ) }
 
         {/* Rating Badge */}
         {rating && parseFloat(rating) > 0 && (
