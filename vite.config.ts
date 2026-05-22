@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 import react from '@vitejs/plugin-react'
 import Pages from 'vite-plugin-pages'
-import reactSwc from 'vite-plugin-react-swc'
+import reactSwc from '@vitejs/plugin-react-swc'
 
 
 function figmaAssetResolver() {
