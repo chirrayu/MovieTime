@@ -1,7 +1,9 @@
 export interface User {
   id: string;
+  userId?: string;
   username: string;
   isHost: boolean;
+  isConnected?: boolean;
   avatarUrl?: string;
   isReady?: boolean;
 }

@@ -9,6 +9,10 @@ const ALLOWED_ORIGINS = [
   'https://movie-time-orcin.vercel.app',
   'http://localhost:5173',
   'http://localhost:5174',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
+  'http://localhost:4173',
+  'http://127.0.0.1:4173',
 ];
 
 const app = express();
@@ -31,6 +35,8 @@ const io = new Server(server, {
 
 // In-memory store for rooms
 const rooms: Record<string, RoomState> = {};
+const disconnectTimeouts: Record<string, Record<string, ReturnType<typeof setTimeout>>> = {};
+const ROOM_GRACE_PERIOD_MS = 15000;
 
 app.get('/health', (req, res) => {
   res.send('Watch Party Server is running');
@@ -44,7 +50,7 @@ io.on('connection', (socket: Socket) => {
     if (typeof cb === 'function') cb();
   });
 
-  socket.on('join_room', ({ roomId, username, mediaId, mediaType }: { roomId: string, username: string, mediaId?: string, mediaType?: 'movie' | 'tv' }) => {
+  socket.on('join_room', ({ roomId, username, userId, mediaId, mediaType }: { roomId: string, username: string, userId?: string, mediaId?: string, mediaType?: 'movie' | 'tv' }) => {
     let room = rooms[roomId];
 
     if (!room) {
@@ -64,17 +70,59 @@ io.on('connection', (socket: Socket) => {
       rooms[roomId] = room;
     }
 
+    if (room.users[socket.id]) {
+      socket.join(roomId);
+      socket.emit('room_state_update', room);
+      return;
+    }
+
+    if (userId) {
+      const existingEntry = Object.values(room.users).find((user) => user.userId === userId);
+      if (existingEntry) {
+        const previousSocketId = existingEntry.id;
+        const wasHost = room.hostId === previousSocketId;
+        if (disconnectTimeouts[roomId]?.[previousSocketId]) {
+          clearTimeout(disconnectTimeouts[roomId][previousSocketId]);
+          delete disconnectTimeouts[roomId][previousSocketId];
+        }
+        delete room.users[previousSocketId];
+
+        const updatedUser: User = {
+          ...existingEntry,
+          id: socket.id,
+          userId,
+          username: username || existingEntry.username,
+          isHost: wasHost,
+          isConnected: true,
+        };
+
+        room.users[socket.id] = updatedUser;
+        if (wasHost) {
+          room.hostId = socket.id;
+        }
+        socket.join(roomId);
+        socket.emit('room_state_update', room);
+        socket.to(roomId).emit('user_joined', updatedUser);
+        if (!updatedUser.isHost && room.hostId && room.hostId !== socket.id) {
+          io.to(room.hostId).emit('request_host_timeline', { roomId, requesterId: socket.id });
+        }
+        return;
+      }
+    }
+
     const isHost = room.hostId === socket.id || Object.keys(room.users).length === 0;
     
     // In case the host left and someone else joins, or it's the first user
     if (isHost && room.hostId !== socket.id) {
-        room.hostId = socket.id;
+      room.hostId = socket.id;
     }
 
     const newUser: User = {
       id: socket.id,
+      userId,
       username: username || `User-${socket.id.substring(0, 4)}`,
-      isHost
+      isHost,
+      isConnected: true,
     };
 
     room.users[socket.id] = newUser;
@@ -85,8 +133,36 @@ io.on('connection', (socket: Socket) => {
 
     // Notify others that a new user joined
     socket.to(roomId).emit('user_joined', newUser);
+    if (!newUser.isHost && room.hostId && room.hostId !== socket.id) {
+      io.to(room.hostId).emit('request_host_timeline', { roomId, requesterId: socket.id });
+    }
     
     console.log(`User ${newUser.username} (${socket.id}) joined room ${roomId}`);
+  });
+
+  socket.on('request_host_timeline', ({ roomId, requesterId }: { roomId: string; requesterId: string }) => {
+    const room = rooms[roomId];
+    if (!room || !room.hostId || room.hostId === socket.id) return;
+    if (!room.users[requesterId]) return;
+    io.to(room.hostId).emit('request_host_timeline', { roomId, requesterId });
+  });
+
+  socket.on('host_timeline', (payload: { roomId: string; requesterId?: string; type: 'play' | 'pause' | 'seek'; currentTime: number; sentAt?: number; mediaId?: string; mediaType?: 'movie' | 'tv' }) => {
+    const room = rooms[payload.roomId];
+    if (!room || room.hostId !== socket.id) return;
+    if (typeof payload.currentTime !== 'number') return;
+
+    room.playbackState.timestamp = payload.currentTime;
+    room.playbackState.lastUpdateTime = Date.now();
+    room.playbackState.isPlaying = payload.type === 'play';
+    if (payload.mediaId) room.playbackState.mediaId = payload.mediaId;
+    if (payload.mediaType) room.playbackState.mediaType = payload.mediaType;
+
+    if (payload.requesterId && room.users[payload.requesterId]) {
+      io.to(payload.requesterId).emit('host_timeline', payload);
+    } else {
+      socket.to(payload.roomId).emit('host_timeline', payload);
+    }
   });
 
   socket.on('sync', (payload: { roomId: string; type: 'play' | 'pause' | 'seek'; currentTime: number }) => {
@@ -108,9 +184,41 @@ io.on('connection', (socket: Socket) => {
     if (payload.type === 'play') room.playbackState.isPlaying = true;
     else if (payload.type === 'pause') room.playbackState.isPlaying = false;
 
-    const broadcast = { roomId: payload.roomId, type: payload.type, currentTime: payload.currentTime };
+    const broadcast = {
+      roomId: payload.roomId,
+      type: payload.type,
+      currentTime: payload.currentTime,
+      sentAt: Date.now(),
+    };
     console.log('BROADCAST', broadcast);
     socket.to(payload.roomId).emit('sync', broadcast);
+  });
+
+  socket.on('sync_state', (payload: { roomId?: string; type?: 'play' | 'pause' | 'seek'; currentTime?: number; sentAt?: number }) => {
+    if (
+      !payload?.roomId ||
+      !payload?.type ||
+      typeof payload.currentTime !== 'number' ||
+      !['play', 'pause', 'seek'].includes(payload.type)
+    ) {
+      return;
+    }
+
+    const room = rooms[payload.roomId];
+    if (!room) return;
+    if (room.hostId !== socket.id) return;
+
+    room.playbackState.timestamp = payload.currentTime;
+    room.playbackState.lastUpdateTime = Date.now();
+    if (payload.type === 'play') room.playbackState.isPlaying = true;
+    else if (payload.type === 'pause') room.playbackState.isPlaying = false;
+
+    socket.to(payload.roomId).emit('sync_state', {
+      roomId: payload.roomId,
+      type: payload.type,
+      currentTime: payload.currentTime,
+      sentAt: payload.sentAt ?? Date.now(),
+    });
   });
 
   // Embedded chat functionality
@@ -154,29 +262,47 @@ io.on('connection', (socket: Socket) => {
       const room = rooms[roomId];
       if (room.users[socket.id]) {
         const user = room.users[socket.id];
-        delete room.users[socket.id];
-        
-        // If room is empty, clean it up
-        if (Object.keys(room.users).length === 0) {
-          delete rooms[roomId];
-          console.log(`Room ${roomId} deleted as it is empty.`);
-        } else {
-          // If the host disconnected, assign a new host randomly
-          if (room.hostId === socket.id) {
-            const newHostId = Object.keys(room.users)[0];
-            room.hostId = newHostId;
-            room.users[newHostId].isHost = true;
+        user.isConnected = false;
+
+        if (!disconnectTimeouts[roomId]) disconnectTimeouts[roomId] = {};
+        if (disconnectTimeouts[roomId][socket.id]) {
+          clearTimeout(disconnectTimeouts[roomId][socket.id]);
+        }
+        disconnectTimeouts[roomId][socket.id] = setTimeout(() => {
+          delete disconnectTimeouts[roomId][socket.id];
+
+          const cleanupRoom = rooms[roomId];
+          if (!cleanupRoom) return;
+
+          const disconnectedUser = cleanupRoom.users[socket.id];
+          if (!disconnectedUser || disconnectedUser.isConnected !== false) return;
+
+          const wasHost = cleanupRoom.hostId === socket.id;
+          delete cleanupRoom.users[socket.id];
+
+          if (Object.keys(cleanupRoom.users).length === 0) {
+            delete rooms[roomId];
+            delete disconnectTimeouts[roomId];
+            console.log(`Room ${roomId} deleted as it is empty.`);
+            return;
+          }
+
+          if (wasHost) {
+            const newHostId = Object.keys(cleanupRoom.users)[0];
+            cleanupRoom.hostId = newHostId;
+            cleanupRoom.users[newHostId].isHost = true;
             io.to(roomId).emit('host_changed', newHostId);
           }
-          
-          socket.to(roomId).emit('user_left', socket.id);
-        }
+        }, ROOM_GRACE_PERIOD_MS);
+        
+        // Notify connected clients that the user temporarily left
+        socket.to(roomId).emit('user_left', socket.id);
       }
     }
   });
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT) || 3002;
 // Only start the server listening port if we are NOT running in a serverless environment (Vercel)
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
   server.listen(PORT, () => {

@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Maximize2, Minimize2, SkipForward, List, Globe, Users, MessageSquare, Send, Share2, Sparkles, AlertCircle, X, Shield, Play, Pause, RefreshCw, Volume2, VolumeX } from 'lucide-react';
@@ -33,6 +34,11 @@ interface SyncPayload {
   roomId: string;
   type: 'play' | 'pause' | 'seek';
   currentTime: number;
+  sentAt?: number;
+  requesterId?: string;
+  mediaId?: string;
+  mediaType?: 'movie' | 'tv';
+  playbackRate?: number;
 }
 
 interface PartyRoomState {
@@ -54,10 +60,14 @@ interface PlayerPageProps {
   type: 'movie' | 'tv';
 }
 
-// Watch Party Backend URL — dev defaults to local backend (must match server port)
-const BACKEND_URL =
-  import.meta.env.VITE_WS_URL ||
-  (import.meta.env.DEV ? 'http://localhost:3002' : 'https://movietime-mkwk.onrender.com');
+// Watch Party Backend URL — runtime-safe fallback (dev defaults to local backend)
+const BACKEND_URL = (() => {
+  const win = window as any;
+  if (win && win.__VITE_WS_URL) return win.__VITE_WS_URL;
+  const hostname = window.location.hostname;
+  const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
+  return isLocal ? 'http://127.0.0.1:3002' : 'https://movietime-mkwk.onrender.com';
+})();
 
 // ----------------------------------------------------
 // Sub-Component: VideoFeed
@@ -138,7 +148,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
     return () => clearTimeout(timer);
   }, []);
   const [showLangDropdown, setShowLangDropdown] = useState(false);
-  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const prefs = getPreferences();
@@ -165,7 +175,19 @@ export function PlayerPage({ type }: PlayerPageProps) {
   const [username, setUsername] = useState<string>(() => {
     return localStorage.getItem('movietime_username') || '';
   });
+  const [userId, setUserId] = useState<string>(() => {
+    return localStorage.getItem('movietime_user_id') || '';
+  });
   const [showNameModal, setShowNameModal] = useState<boolean>(!username && !!roomId);
+
+  const generateNewUserId = () => {
+    const newId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `user-${Math.random().toString(36).substring(2, 12)}`;
+    localStorage.setItem('movietime_user_id', newId);
+    setUserId(newId);
+    return newId;
+  };
   const [latency, setLatency] = useState<number>(0);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -195,6 +217,12 @@ export function PlayerPage({ type }: PlayerPageProps) {
   const lastProgressUpdateRef = useRef(lastProgressUpdate);
   const hostIdRef = useRef(hostId);
   const isPlayingRef = useRef(false);
+
+  // Sync/drift correction constants and smoothing timer
+  const SYNC_SMALL_DRIFT = 0.3; // seconds
+  const SYNC_HARD_DRIFT = 2; // seconds
+  const SYNC_SMOOTH_DURATION = 3000; // ms: how long to apply gentle playbackRate
+  const smoothAdjustTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => { currentProgressRef.current = currentProgress; }, [currentProgress]);
   useEffect(() => { currentDurationRef.current = currentDuration; }, [currentDuration]);
@@ -405,11 +433,19 @@ export function PlayerPage({ type }: PlayerPageProps) {
   }, [postToEmbedPlayer]);
 
   const applyRemoteSync = useCallback((data: SyncPayload, source: string) => {
+    const estimatedLatencySeconds = latency ? latency / 2000 : 0;
+    const actualLatencySeconds = data.sentAt ? Math.max(0, Date.now() - data.sentAt) / 1000 : estimatedLatencySeconds;
+    const time = Math.max(0, data.currentTime);
+    const targetTime = data.type === 'play'
+      ? Math.min(currentDurationRef.current || time, time + actualLatencySeconds)
+      : time;
+
     console.log('SYNC RECEIVED', {
       source,
       payload: data,
       localTime: currentProgressRef.current,
-      receivedTime: data.currentTime,
+      predictedTime: targetTime,
+      latencySeconds: actualLatencySeconds,
     });
 
     if (!partyReadyRef.current) {
@@ -418,42 +454,84 @@ export function PlayerPage({ type }: PlayerPageProps) {
     }
 
     isRemoteUpdate.current = true;
-    const time = Math.max(0, data.currentTime);
 
-    setCurrentProgress(time);
-    setLastProgressUpdate(Date.now());
-    sendPlayerCommand('seek', time);
+    const local = currentProgressRef.current || 0;
+    const drift = Math.abs(local - targetTime);
 
-    if (data.type === 'play') {
-      setIsPlaying(true);
-      setLocalIsPlaying(true);
-      sendPlayerCommand('play');
-      console.log({
-        action: 'APPLY play',
-        localTime: currentProgressRef.current,
-        receivedTime: data.currentTime,
-      });
-    } else if (data.type === 'pause') {
-      setIsPlaying(false);
-      setLocalIsPlaying(false);
-      sendPlayerCommand('pause');
-      console.log({
-        action: 'APPLY pause',
-        localTime: currentProgressRef.current,
-        receivedTime: data.currentTime,
-      });
-    } else {
-      console.log({
-        action: 'APPLY seek',
-        localTime: currentProgressRef.current,
-        receivedTime: data.currentTime,
-      });
+    // Clear any previous smooth adjust timers
+    if (smoothAdjustTimeoutRef.current) {
+      window.clearTimeout(smoothAdjustTimeoutRef.current);
+      smoothAdjustTimeoutRef.current = null;
     }
 
+    // Helper to reset playbackRate back to 1
+    const resetPlaybackRate = () => {
+      try {
+        sendPlayerCommand('playbackRate', 1);
+      } catch (err) {
+        console.warn('Failed to reset playbackRate', err);
+      }
+    };
+
+    // Apply behavior depending on drift size
+    if (drift < SYNC_SMALL_DRIFT) {
+      // Small drift: just nudge internal state and play/pause without seeking
+      setCurrentProgress(targetTime);
+      setLastProgressUpdate(Date.now());
+      if (data.type === 'play') {
+        setIsPlaying(true);
+        setLocalIsPlaying(true);
+        sendPlayerCommand('play');
+      } else if (data.type === 'pause') {
+        setIsPlaying(false);
+        setLocalIsPlaying(false);
+        sendPlayerCommand('pause');
+      }
+      console.log('APPLY small drift adjust', { local, targetTime, drift });
+    } else if (drift < SYNC_HARD_DRIFT) {
+      // Medium drift: gentle playbackRate correction to converge
+      const shouldSpeedUp = targetTime > local;
+      const rate = shouldSpeedUp ? 1.02 : 0.98;
+      setLastProgressUpdate(Date.now());
+      sendPlayerCommand('playbackRate', rate);
+      // After a short window, reset rate and snap to expected time to avoid permanent skew
+      smoothAdjustTimeoutRef.current = window.setTimeout(() => {
+        resetPlaybackRate();
+        setCurrentProgress(targetTime);
+        setLastProgressUpdate(Date.now());
+      }, SYNC_SMOOTH_DURATION) as unknown as number;
+      if (data.type === 'play') {
+        setIsPlaying(true);
+        setLocalIsPlaying(true);
+        sendPlayerCommand('play');
+      } else if (data.type === 'pause') {
+        setIsPlaying(false);
+        setLocalIsPlaying(false);
+        sendPlayerCommand('pause');
+      }
+      console.log('APPLY gentle playbackRate', { local, targetTime, drift, rate });
+    } else {
+      // Large drift: hard seek to authoritative time
+      setCurrentProgress(targetTime);
+      setLastProgressUpdate(Date.now());
+      sendPlayerCommand('seek', targetTime);
+      if (data.type === 'play') {
+        setIsPlaying(true);
+        setLocalIsPlaying(true);
+        sendPlayerCommand('play');
+      } else if (data.type === 'pause') {
+        setIsPlaying(false);
+        setLocalIsPlaying(false);
+        sendPlayerCommand('pause');
+      }
+      console.log('APPLY hard seek', { local, targetTime, drift });
+    }
+
+    // short debounce before re-enabling local listeners
     setTimeout(() => {
       isRemoteUpdate.current = false;
-    }, 200);
-  }, [sendPlayerCommand]);
+    }, 250);
+  }, [sendPlayerCommand, latency]);
 
   const emitHostSync = useCallback((type: 'play' | 'pause' | 'seek', currentTime?: number) => {
     if (!isHost) {
@@ -469,7 +547,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
       0,
       Math.min(currentDurationRef.current || 0, currentTime ?? currentProgressRef.current)
     );
-    const payload: SyncPayload = { roomId, type, currentTime: time };
+    const payload: SyncPayload = { roomId, type, currentTime: time, sentAt: Date.now() };
 
     console.log('EMIT', payload);
 
@@ -514,6 +592,20 @@ export function PlayerPage({ type }: PlayerPageProps) {
   }, [embedUrl, hideEmbedPlayerControls]);
 
   const togglePlayPause = useCallback(() => {
+    if (!roomId) {
+      if (isRemoteUpdate.current) return;
+      if (isPlaying) {
+        setIsPlaying(false);
+        setLocalIsPlaying(false);
+        sendPlayerCommand('pause');
+      } else {
+        setIsPlaying(true);
+        setLocalIsPlaying(true);
+        sendPlayerCommand('play');
+      }
+      return;
+    }
+
     if (!canHostControl) {
       if (roomId && !isHost) {
         toast.info('Only the host controls playback');
@@ -528,7 +620,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
     } else {
       emitHostSync('play', currentProgressRef.current);
     }
-  }, [canHostControl, roomId, isHost, partyReady, isPlaying, emitHostSync]);
+  }, [canHostControl, roomId, isHost, partyReady, isPlaying, emitHostSync, sendPlayerCommand]);
 
   const broadcastHostCommand = useCallback((
     command: 'play' | 'pause' | 'seek',
@@ -578,17 +670,32 @@ export function PlayerPage({ type }: PlayerPageProps) {
   }, [isHost, partyReady, emitHostSync]);
 
   const handleProgressBarClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!canHostControl) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const width = rect.width;
     const percentage = clickX / width;
     const targetProgress = Math.floor(percentage * currentDuration);
 
-    broadcastHostCommand('seek', targetProgress, {
-      toastMessage: `Jumped to ${Math.floor(targetProgress / 60)}m ${targetProgress % 60}s for everyone`,
-    });
-  }, [canHostControl, currentDuration, broadcastHostCommand]);
+    if (roomId) {
+      if (!canHostControl) {
+        if (!isHost) {
+          toast.info('Only the host can jump the timeline during a watch party');
+        } else if (!partyReady) {
+          toast.info('Join the watch party first');
+        }
+        return;
+      }
+
+      broadcastHostCommand('seek', targetProgress, {
+        toastMessage: `Jumped to ${Math.floor(targetProgress / 60)}m ${targetProgress % 60}s for everyone`,
+      });
+      return;
+    }
+
+    setCurrentProgress(targetProgress);
+    setLastProgressUpdate(Date.now());
+    sendPlayerCommand('seek', targetProgress);
+  }, [roomId, canHostControl, currentDuration, broadcastHostCommand, isHost, partyReady, sendPlayerCommand]);
 
   // ----------------------------------------------------
   // Clean up WebRTC streams on unmount
@@ -739,28 +846,38 @@ export function PlayerPage({ type }: PlayerPageProps) {
       setConnStatus('connected');
       toast.success('Connected to watch party!');
 
-      // Join Room
-      newSocket.emit('join_room', {
-        roomId,
-        username,
-        mediaId: id,
-        mediaType: type
-      });
+      if (partyReadyRef.current && roomId) {
+        newSocket.emit('join_room', {
+          roomId,
+          username,
+          userId: userId || generateNewUserId(),
+          mediaId: id,
+          mediaType: type
+        });
+      }
     });
 
-    newSocket.on('connect_error', () => {
+    newSocket.on('connect_error', (err) => {
+      console.error('Socket connect_error:', err);
       setConnStatus('disconnected');
-      // Pause video locally when connection fails
       sendPlayerCommand('pause');
       setIsPlaying(false);
       setLocalIsPlaying(false);
-      toast.error('Watch party server connection failed. Playback paused.');
+      toast.error(`Watch party connection failed: ${err?.message || 'unknown error'}`);
+    });
+
+    newSocket.on('connect_timeout', () => {
+      console.error('Socket connect_timeout');
+      setConnStatus('disconnected');
+      sendPlayerCommand('pause');
+      setIsPlaying(false);
+      setLocalIsPlaying(false);
+      toast.error('Watch party connection timed out.');
     });
 
     newSocket.on('error', (err) => {
       console.error('Socket error:', err);
       setConnStatus('disconnected');
-      // Pause video locally when a network error occurs
       sendPlayerCommand('pause');
       setIsPlaying(false);
       setLocalIsPlaying(false);
@@ -779,7 +896,13 @@ export function PlayerPage({ type }: PlayerPageProps) {
     newSocket.on('reconnect', () => {
       setConnStatus('connected');
       toast.success('Reconnected to watch party');
-      newSocket.emit('join_room', { roomId, username, mediaId: id, mediaType: type });
+      newSocket.emit('join_room', {
+        roomId,
+        username,
+        userId: userId || generateNewUserId(),
+        mediaId: id,
+        mediaType: type,
+      });
     });
 
     // Room state on join — guests apply host state once (no drift math)
@@ -791,11 +914,14 @@ export function PlayerPage({ type }: PlayerPageProps) {
       // Guests apply initial state only after explicit join (no drift math)
       if (newSocket.id !== roomState.hostId && partyReadyRef.current) {
         const pb = roomState.playbackState;
+        const elapsed = pb.isPlaying ? (Date.now() - pb.lastUpdateTime) / 1000 : 0;
+        const predictedTime = Math.max(0, pb.timestamp + elapsed);
         applyRemoteSync(
           {
             roomId: roomState.roomId,
             type: pb.isPlaying ? 'play' : 'pause',
-            currentTime: pb.timestamp,
+            currentTime: predictedTime,
+            sentAt: pb.lastUpdateTime,
           },
           'room_state_update'
         );
@@ -806,6 +932,31 @@ export function PlayerPage({ type }: PlayerPageProps) {
     newSocket.on('user_joined', (user: PartyUser) => {
       setUsers(prev => ({ ...prev, [user.id]: user }));
       toast.info(`${user.username} joined the party!`);
+    });
+
+    newSocket.on('request_host_timeline', ({ roomId: requestRoomId, requesterId }: { roomId: string; requesterId: string }) => {
+      if (hostIdRef.current !== newSocket.id) return;
+      if (requestRoomId !== roomId) return;
+
+      const timeline: SyncPayload = {
+        roomId,
+        requesterId,
+        type: isPlayingRef.current ? 'play' : 'pause',
+        currentTime: Math.max(0, currentProgressRef.current),
+        sentAt: Date.now(),
+        mediaId: id,
+        mediaType: type,
+      };
+
+      console.log('HOST TIMELINE RESPONDING', timeline);
+      newSocket.emit('host_timeline', timeline);
+    });
+
+    newSocket.on('host_timeline', (payload: SyncPayload) => {
+      if (payload.requesterId && payload.requesterId !== newSocket.id) return;
+      if (newSocket.id === hostIdRef.current) return;
+      console.log('HOST TIMELINE RECEIVED', payload);
+      applyRemoteSync(payload, 'host_timeline');
     });
 
     // User left
@@ -857,6 +1008,11 @@ export function PlayerPage({ type }: PlayerPageProps) {
         return;
       }
       applyRemoteSync(data, 'sync');
+    });
+
+    newSocket.on('sync_state', (data: SyncPayload) => {
+      if (newSocket.id === hostIdRef.current) return;
+      applyRemoteSync(data, 'sync_state');
     });
 
     // Receive embedded chat messages
@@ -938,6 +1094,22 @@ export function PlayerPage({ type }: PlayerPageProps) {
     };
   }, [roomId, username, showNameModal, sendPlayerCommand, applyRemoteSync, id, type]);
 
+  useEffect(() => {
+    if (!socket || !roomId || !isHost || !partyReady || connStatus !== 'connected') return;
+
+    const syncInterval = setInterval(() => {
+      if (!isPlaying) return;
+      socket.emit('sync_state', {
+        roomId,
+        type: 'play',
+        currentTime: currentProgressRef.current,
+        sentAt: Date.now(),
+      });
+    }, 3000);
+
+    return () => clearInterval(syncInterval);
+  }, [socket, roomId, isHost, partyReady, connStatus, isPlaying]);
+
   // Autoscroll chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1017,6 +1189,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
         await document.exitFullscreen();
         setIsFullscreen(false);
       }
+      resetControlsTimeout();
     } catch (err) {
       console.error('Fullscreen error:', err);
     }
@@ -1095,6 +1268,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
       toast.error('Enter a username first');
       return;
     }
+    const activeUserId = userId || generateNewUserId();
     setHasJoinedParty(true);
     partyReadyRef.current = true;
     // Re-join so server sends room_state_update after sync is unlocked
@@ -1102,16 +1276,18 @@ export function PlayerPage({ type }: PlayerPageProps) {
       socket.emit('join_room', {
         roomId,
         username,
+        userId: activeUserId,
         mediaId: id,
         mediaType: type,
       });
     }
     toast.success('Joined watch party — playback sync is active');
-  }, [username, socket, roomId, id, type]);
+  }, [username, userId, socket, roomId, id, type]);
 
   const handleUsernameSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) return;
+    const activeUserId = userId || generateNewUserId();
     try {
       localStorage.setItem('movietime_username', username);
     } catch (err) {
@@ -1120,6 +1296,15 @@ export function PlayerPage({ type }: PlayerPageProps) {
     setShowNameModal(false);
     setHasJoinedParty(true);
     partyReadyRef.current = true;
+    if (socket?.connected && roomId) {
+      socket.emit('join_room', {
+        roomId,
+        username,
+        userId: activeUserId,
+        mediaId: id,
+        mediaType: type,
+      });
+    }
     toast.success(`Welcome, ${username}! Join Watch Party to sync playback.`);
   };
 
@@ -1140,15 +1325,15 @@ export function PlayerPage({ type }: PlayerPageProps) {
         onClick={resetControlsTimeout}
       >
         {/* Video Player Iframe — native embed UI cropped/hidden; custom controls below */}
-        <div className="watch-player-embed absolute inset-0 z-0">
+        <div className="watch-player-embed absolute inset-0 z-0" onMouseMove={resetControlsTimeout} onClick={resetControlsTimeout}>
           <iframe
             ref={iframeRef}
             src={embedUrl}
             className="border-0"
-            allowFullScreen
-            sandbox="allow-same-origin allow-scripts allow-forms"
             allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
             title={type === 'movie' ? 'Movie Player' : `S${seasonNum}E${episodeNum}`}
+            onMouseMove={resetControlsTimeout}
+            onClick={resetControlsTimeout}
           />
         </div>
 
