@@ -928,8 +928,6 @@ export function PlayerPage({ type }: PlayerPageProps) {
           ref={iframeRef}
           src={embedUrl}
           className="w-full h-full border-0 absolute inset-0 z-0"
-          allowFullScreen
-          sandbox="allow-same-origin allow-scripts allow-forms"
           allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
           title={type === 'movie' ? 'Movie Player' : `S${seasonNum}E${episodeNum}`}
         />

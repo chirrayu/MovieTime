@@ -143,17 +143,29 @@ export function tmdbPoster(path: string | null, size: 'w200' | 'w342' | 'w500' |
 
 // ---- Embed URL Builders ----
 
+function buildEmbedSearchParams(options?: {
+  resumeAt?: number;
+  primaryColor?: string;
+  lang?: string;
+}): URLSearchParams {
+  const params = new URLSearchParams();
+  if (options?.resumeAt) params.set('resumeAt', String(options.resumeAt));
+  if (options?.primaryColor) params.set('primaryColor', options.primaryColor);
+  if (options?.lang) params.set('lang', options.lang);
+  // Hide the embed player's built-in UI — watch party uses custom controls only
+  params.set('showTitle', 'false');
+  params.set('controls', 'false');
+  params.set('hideControls', 'true');
+  return params;
+}
+
 export function getMovieEmbedUrl(id: string, options?: {
   resumeAt?: number;
   primaryColor?: string;
   lang?: string;
 }): string {
-  let url = `${VAPLAYER_BASE}/embed/movie/${id}`;
-  const params = new URLSearchParams();
-  if (options?.resumeAt) params.set('resumeAt', String(options.resumeAt));
-  if (options?.primaryColor) params.set('primaryColor', options.primaryColor);
-  if (options?.lang) params.set('lang', options.lang);
-  const qs = params.toString();
+  const url = `${VAPLAYER_BASE}/embed/movie/${id}`;
+  const qs = buildEmbedSearchParams(options).toString();
   return qs ? `${url}?${qs}` : url;
 }
 
@@ -162,12 +174,8 @@ export function getTVEmbedUrl(id: string, season: number, episode: number, optio
   primaryColor?: string;
   lang?: string;
 }): string {
-  let url = `${VAPLAYER_BASE}/embed/tv/${id}/${season}/${episode}`;
-  const params = new URLSearchParams();
-  if (options?.resumeAt) params.set('resumeAt', String(options.resumeAt));
-  if (options?.primaryColor) params.set('primaryColor', options.primaryColor);
-  if (options?.lang) params.set('lang', options.lang);
-  const qs = params.toString();
+  const url = `${VAPLAYER_BASE}/embed/tv/${id}/${season}/${episode}`;
+  const qs = buildEmbedSearchParams(options).toString();
   return qs ? `${url}?${qs}` : url;
 }
 

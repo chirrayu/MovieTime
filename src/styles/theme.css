@@ -195,3 +195,43 @@
     line-height: 1.5;
   }
 }
+
+/* Native HTML5 video UI — hidden; custom watch party controls only */
+.watch-party-video {
+  object-fit: cover;
+}
+
+.watch-party-video::-webkit-media-controls,
+.watch-party-video::-webkit-media-controls-enclosure,
+.watch-party-video::-webkit-media-controls-panel,
+.watch-party-video::-webkit-media-controls-play-button,
+.watch-party-video::-webkit-media-controls-timeline,
+.watch-party-video::-webkit-media-controls-current-time-display,
+.watch-party-video::-webkit-media-controls-time-remaining-display,
+.watch-party-video::-webkit-media-controls-mute-button,
+.watch-party-video::-webkit-media-controls-volume-slider,
+.watch-party-video::-webkit-media-controls-fullscreen-button,
+.watch-party-video::-webkit-media-controls-overlay-play-button,
+.watch-party-video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.watch-party-video::-moz-media-controls {
+  display: none !important;
+}
+
+/* Crop embedded player chrome (progress bar) below the fold */
+.watch-player-embed {
+  --embed-controls-offset: 72px;
+  overflow: hidden;
+}
+
+.watch-player-embed iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: calc(100% + var(--embed-controls-offset));
+  border: 0;
+}
