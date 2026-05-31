@@ -26,22 +26,22 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-[#070707] text-white">
+      <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
         {/* Sidebar */}
         <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
 
         {/* Main Content */}
         <main className={`min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'md:ml-20' : 'md:ml-64'} pb-20 md:pb-0`}>
           {/* Header */}
-          <header className="sticky top-0 z-40 backdrop-blur-xl bg-[#070707]/80 border-b border-white/5">
+          <header className="sticky top-0 z-40 backdrop-blur-xl bg-[var(--surface)]/85 border-b border-[var(--border)]">
             <div className="flex items-center justify-between p-4 px-6">
               <SearchBar />
               <div className="flex items-center gap-4">
-                <button className="text-[#9A9A9A] hover:text-white transition-colors duration-200 relative">
+                <button className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors duration-200 relative">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                   </svg>
-                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-[#E50914] rounded-full" />
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-[var(--primary)] rounded-full" />
                 </button>
               </div>
             </div>

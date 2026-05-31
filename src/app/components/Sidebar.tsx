@@ -53,7 +53,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </h1>
         )}
         <button
+          type="button"
           onClick={onToggle}
+          aria-label={collapsed ? 'Open sidebar' : 'Close sidebar'}
           className="p-2 rounded-lg hover:bg-white/5 transition-colors text-[#9A9A9A] hover:text-white"
         >
           {collapsed ? <Menu className="w-5 h-5" /> : <X className="w-5 h-5" />}
@@ -115,7 +117,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           return (
             <button
               key={item.id}
+              type="button"
               onClick={() => navigate(item.path)}
+              aria-label={item.label}
               className={`flex flex-col items-center gap-1 p-2 min-w-[64px] ${isActive ? 'text-[#E50914]' : 'text-[#9A9A9A] hover:text-white'}`}
             >
               <Icon className="w-5 h-5" strokeWidth={isActive ? 2 : 1.5} />

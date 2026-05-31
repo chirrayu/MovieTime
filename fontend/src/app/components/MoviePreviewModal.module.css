@@ -1,0 +1,191 @@
+/* MoviePreviewModal.module.css — custom visual effects */
+
+/* Overlay (full-screen dark blurred background) */
+.overlay {
+  position: fixed;
+  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999999;
+  /* ensure topmost */
+  overflow: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  pointer-events: auto;
+}
+
+.overlay::-webkit-scrollbar {
+  display: none;
+}
+
+/* Modal card */
+.modal {
+  position: relative;
+  background: #0e0000;
+  /* gray-900 */
+  border-radius: 1rem;
+  width: 100%;
+  max-width: 48rem;
+  margin: 1rem;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px rgba(229, 9, 20, 0.2),
+    0 0 40px rgba(229, 9, 20, 0.25),
+    0 25px 50px rgba(0, 0, 0, 0.8);
+  z-index: 1000000;
+  /* ensure modal is above overlay */
+}
+
+.modal::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(229, 9, 20, 0.15);
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Cinematic banner */
+.banner {
+  position: relative;
+  height: 16rem;
+  /* h-64 */
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  .banner {
+    height: 22rem;
+    /* md:h-88 */
+  }
+}
+
+.banner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom,
+      rgba(0, 0, 0, 0.25) 0%,
+      rgba(0, 0, 0, 0.55) 60%,
+      rgb(39, 17, 17) 100%);
+}
+
+/* Scrollable content area */
+.content {
+  padding: 1.5rem;
+  color: #f3f4f6;
+  max-height: 60vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(229, 9, 20, 0.5) rgba(255, 255, 255, 0.05);
+}
+
+.content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.content::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 999px;
+}
+
+.content::-webkit-scrollbar-thumb {
+  background: rgba(229, 9, 20, 0.55);
+  border-radius: 999px;
+}
+
+/* Buttons base */
+.actionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.actionBtn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+/* Play button – Netflix red */
+.playBtn {
+  background: #e50914;
+  border-color: transparent;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 14px rgba(229, 9, 20, 0.55);
+}
+
+.playBtn:hover {
+  background: #ff1a25;
+  box-shadow: 0 0 24px rgba(229, 9, 20, 0.75);
+  transform: translateY(-1px);
+}
+
+/* Shine sweep animation on Play */
+.shine::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -75%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  animation: shineSweep 2.4s infinite;
+}
+
+@keyframes shineSweep {
+  0% {
+    left: -75%;
+  }
+
+  60% {
+    left: 125%;
+  }
+
+  100% {
+    left: 125%;
+  }
+}
+
+/* Watchlist button */
+.watchlistBtn {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.watchlistBtn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.inList {
+  background: rgba(229, 9, 20, 0.18);
+  color: #e50914;
+  border-color: rgba(229, 9, 20, 0.45);
+}
+
+/* Like / Share hover */
+.likeBtn:hover,
+.shareBtn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}

@@ -17,9 +17,11 @@ interface MovieCardProps {
   // For continue watching
   progress?: number;
   duration?: number;
+  // Optional callback when the card is clicked (used for preview modal)
+  onCardClick?: (movie: MovieCardProps) => void;
 }
 
-export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, genre, type, progress, duration }: MovieCardProps) {
+export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, genre, type, progress, duration, onCardClick }: MovieCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [inList, setInList] = useState(isInWatchlist(tmdb_id || imdb_id));
   const navigate = useNavigate();
@@ -35,8 +37,26 @@ export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, g
   };
 
   const handleClick = () => {
-    const path = type === 'movie' ? `/movie/${tmdb_id}` : `/tv/${tmdb_id}`;
-    navigate(path);
+    if (onCardClick) {
+      // Pass full movie data to modal handler
+      onCardClick({
+        tmdb_id,
+        imdb_id,
+        title,
+        year,
+        rating,
+        poster_url,
+        genre,
+        type,
+        embed_url: undefined,
+        progress,
+        duration,
+        onCardClick,
+      });
+    } else {
+      const path = type === 'movie' ? `/movie/${tmdb_id}` : `/tv/${tmdb_id}`;
+      navigate(path);
+    }
   };
 
   const handleWatchlist = (e: React.MouseEvent) => {

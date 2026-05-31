@@ -63,7 +63,9 @@ export function MovieRow({ title, items, loading }: MovieRowProps) {
         {/* Left Arrow */}
         {showLeftArrow && (
           <button
+            type="button"
             onClick={() => scroll('left')}
+            aria-label="Scroll left"
             className="absolute left-0 top-0 bottom-8 z-10 w-14 bg-gradient-to-r from-[#070707] to-transparent
                      flex items-center justify-center opacity-0 group-hover/row:opacity-100
                      transition-opacity duration-300"
@@ -77,7 +79,9 @@ export function MovieRow({ title, items, loading }: MovieRowProps) {
         {/* Right Arrow */}
         {showRightArrow && (
           <button
+            type="button"
             onClick={() => scroll('right')}
+            aria-label="Scroll right"
             className="absolute right-0 top-0 bottom-8 z-10 w-14 bg-gradient-to-l from-[#070707] to-transparent
                      flex items-center justify-center opacity-0 group-hover/row:opacity-100
                      transition-opacity duration-300"

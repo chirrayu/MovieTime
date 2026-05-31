@@ -1,7 +1,34 @@
 // ============================
-// Local Storage Manager
+// Cookie and Local Storage Manager
 // ============================
-// All persistent state is stored in localStorage so it works on Vercel (no backend needed)
+
+// Helper functions for Cookies
+function setCookie(name: string, value: string, days = 365): void {
+  try {
+    const date = new Date();
+    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+    const expires = "; expires=" + date.toUTCString();
+    document.cookie = name + "=" + encodeURIComponent(value) + expires + "; path=/; SameSite=Lax";
+  } catch (e) {
+    console.error('Failed to set cookie', e);
+  }
+}
+
+function getCookie(name: string): string | null {
+  try {
+    const nameEQ = name + "=";
+    const ca = document.cookie.split(';');
+    for (let i = 0; i < ca.length; i++) {
+      let c = ca[i].trim();
+      if (c.indexOf(nameEQ) === 0) {
+        return decodeURIComponent(c.substring(nameEQ.length));
+      }
+    }
+  } catch (e) {
+    console.error('Failed to get cookie', e);
+  }
+  return null;
+}
 
 const STORAGE_KEYS = {
   WATCH_PROGRESS: 'movietime_watch_progress',
@@ -29,7 +56,12 @@ export function saveWatchProgress(entry: WatchProgress): void {
   const key = getProgressKey(entry);
   const all = getAllWatchProgress();
   all[key] = { ...entry, timestamp: Date.now() };
-  localStorage.setItem(STORAGE_KEYS.WATCH_PROGRESS, JSON.stringify(all));
+  const serialized = JSON.stringify(all);
+  
+  // Save to localStorage
+  localStorage.setItem(STORAGE_KEYS.WATCH_PROGRESS, serialized);
+  // Save to Cookie
+  setCookie(STORAGE_KEYS.WATCH_PROGRESS, serialized);
 }
 
 export function getWatchProgress(id: string, season?: number, episode?: number): WatchProgress | null {
@@ -40,8 +72,18 @@ export function getWatchProgress(id: string, season?: number, episode?: number):
 
 export function getAllWatchProgress(): Record<string, WatchProgress> {
   try {
+    // Attempt to load from Cookie first, fallback to localStorage
+    const cookieRaw = getCookie(STORAGE_KEYS.WATCH_PROGRESS);
+    if (cookieRaw) {
+      return JSON.parse(cookieRaw);
+    }
     const raw = localStorage.getItem(STORAGE_KEYS.WATCH_PROGRESS);
-    return raw ? JSON.parse(raw) : {};
+    const parsed = raw ? JSON.parse(raw) : {};
+    // Keep them synced if local storage has data but cookie didn't
+    if (raw) {
+      setCookie(STORAGE_KEYS.WATCH_PROGRESS, raw);
+    }
+    return parsed;
   } catch {
     return {};
   }
@@ -63,7 +105,9 @@ export function removeWatchProgress(id: string, season?: number, episode?: numbe
   const all = getAllWatchProgress();
   const key = season != null && episode != null ? `${id}_s${season}e${episode}` : id;
   delete all[key];
-  localStorage.setItem(STORAGE_KEYS.WATCH_PROGRESS, JSON.stringify(all));
+  const serialized = JSON.stringify(all);
+  localStorage.setItem(STORAGE_KEYS.WATCH_PROGRESS, serialized);
+  setCookie(STORAGE_KEYS.WATCH_PROGRESS, serialized);
 }
 
 function getProgressKey(entry: WatchProgress): string {
@@ -92,13 +136,17 @@ export function addToWatchlist(item: WatchlistItem): void {
   const list = getWatchlist();
   if (!list.find(i => i.id === item.id)) {
     list.unshift({ ...item, addedAt: Date.now() });
-    localStorage.setItem(STORAGE_KEYS.WATCHLIST, JSON.stringify(list));
+    const serialized = JSON.stringify(list);
+    localStorage.setItem(STORAGE_KEYS.WATCHLIST, serialized);
+    setCookie(STORAGE_KEYS.WATCHLIST, serialized);
   }
 }
 
 export function removeFromWatchlist(id: string): void {
   const list = getWatchlist().filter(i => i.id !== id);
-  localStorage.setItem(STORAGE_KEYS.WATCHLIST, JSON.stringify(list));
+  const serialized = JSON.stringify(list);
+  localStorage.setItem(STORAGE_KEYS.WATCHLIST, serialized);
+  setCookie(STORAGE_KEYS.WATCHLIST, serialized);
 }
 
 export function isInWatchlist(id: string): boolean {
@@ -107,8 +155,17 @@ export function isInWatchlist(id: string): boolean {
 
 export function getWatchlist(): WatchlistItem[] {
   try {
+    // Attempt to load from Cookie first, fallback to localStorage
+    const cookieRaw = getCookie(STORAGE_KEYS.WATCHLIST);
+    if (cookieRaw) {
+      return JSON.parse(cookieRaw);
+    }
     const raw = localStorage.getItem(STORAGE_KEYS.WATCHLIST);
-    return raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (raw) {
+      setCookie(STORAGE_KEYS.WATCHLIST, raw);
+    }
+    return parsed;
   } catch {
     return [];
   }
@@ -141,20 +198,32 @@ export function addToHistory(item: HistoryItem): void {
   history.unshift({ ...item, watchedAt: Date.now() });
   // Keep only last 100
   history = history.slice(0, 100);
-  localStorage.setItem(STORAGE_KEYS.WATCH_HISTORY, JSON.stringify(history));
+  const serialized = JSON.stringify(history);
+  localStorage.setItem(STORAGE_KEYS.WATCH_HISTORY, serialized);
+  setCookie(STORAGE_KEYS.WATCH_HISTORY, serialized);
 }
 
 export function getHistory(): HistoryItem[] {
   try {
+    const cookieRaw = getCookie(STORAGE_KEYS.WATCH_HISTORY);
+    if (cookieRaw) {
+      return JSON.parse(cookieRaw);
+    }
     const raw = localStorage.getItem(STORAGE_KEYS.WATCH_HISTORY);
-    return raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (raw) {
+      setCookie(STORAGE_KEYS.WATCH_HISTORY, raw);
+    }
+    return parsed;
   } catch {
     return [];
   }
 }
 
 export function clearHistory(): void {
-  localStorage.setItem(STORAGE_KEYS.WATCH_HISTORY, JSON.stringify([]));
+  const serialized = JSON.stringify([]);
+  localStorage.setItem(STORAGE_KEYS.WATCH_HISTORY, serialized);
+  setCookie(STORAGE_KEYS.WATCH_HISTORY, serialized);
 }
 
 // ---- User Preferences ----
@@ -175,8 +244,16 @@ const DEFAULT_PREFERENCES: UserPreferences = {
 
 export function getPreferences(): UserPreferences {
   try {
+    const cookieRaw = getCookie(STORAGE_KEYS.PREFERENCES);
+    if (cookieRaw) {
+      return { ...DEFAULT_PREFERENCES, ...JSON.parse(cookieRaw) };
+    }
     const raw = localStorage.getItem(STORAGE_KEYS.PREFERENCES);
-    return raw ? { ...DEFAULT_PREFERENCES, ...JSON.parse(raw) } : DEFAULT_PREFERENCES;
+    const parsed = raw ? { ...DEFAULT_PREFERENCES, ...JSON.parse(raw) } : DEFAULT_PREFERENCES;
+    if (raw) {
+      setCookie(STORAGE_KEYS.PREFERENCES, raw);
+    }
+    return parsed;
   } catch {
     return DEFAULT_PREFERENCES;
   }
@@ -185,7 +262,9 @@ export function getPreferences(): UserPreferences {
 export function savePreferences(prefs: Partial<UserPreferences>): void {
   const current = getPreferences();
   const updated = { ...current, ...prefs };
-  localStorage.setItem(STORAGE_KEYS.PREFERENCES, JSON.stringify(updated));
+  const serialized = JSON.stringify(updated);
+  localStorage.setItem(STORAGE_KEYS.PREFERENCES, serialized);
+  setCookie(STORAGE_KEYS.PREFERENCES, serialized);
 }
 
 // ---- Player Event Listener ----
