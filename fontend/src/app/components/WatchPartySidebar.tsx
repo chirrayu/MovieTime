@@ -280,7 +280,7 @@ export function WatchPartySidebar(props: WatchPartySidebarProps) {
                     onClick={() => {
                       setLocalIsPlaying(true);
                       sendPlayerCommand('play');
-                      if (socket) {
+                      if (socket && roomId) {
                         socket.emit('playback_action', {
                           roomId,
                           action: 'play',
@@ -302,7 +302,7 @@ export function WatchPartySidebar(props: WatchPartySidebarProps) {
                     onClick={() => {
                       setLocalIsPlaying(false);
                       sendPlayerCommand('pause');
-                      if (socket) {
+                      if (socket && roomId) {
                         socket.emit('playback_action', {
                           roomId,
                           action: 'pause',
@@ -329,7 +329,7 @@ export function WatchPartySidebar(props: WatchPartySidebarProps) {
                       const newProgress = Math.max(0, currentProgress - 10);
                       setCurrentProgress(newProgress);
                       sendPlayerCommand('seek', newProgress);
-                      if (socket) {
+                      if (socket && roomId) {
                         socket.emit('playback_action', {
                           roomId,
                           action: 'seek',
@@ -352,7 +352,7 @@ export function WatchPartySidebar(props: WatchPartySidebarProps) {
                       const newProgress = Math.min(currentDuration, currentProgress + 10);
                       setCurrentProgress(newProgress);
                       sendPlayerCommand('seek', newProgress);
-                      if (socket) {
+                      if (socket && roomId) {
                         socket.emit('playback_action', {
                           roomId,
                           action: 'seek',
@@ -375,7 +375,7 @@ export function WatchPartySidebar(props: WatchPartySidebarProps) {
                 {/* Sync Button */}
                 <button
                   onClick={() => {
-                    if (socket) {
+                    if (socket && roomId) {
                       socket.emit('force_sync', {
                         roomId,
                         timestamp: currentProgress,

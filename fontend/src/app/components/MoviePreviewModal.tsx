@@ -13,14 +13,28 @@ import {
   Heart,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useNavigate } from 'react-router';
+import {
+  addToWatchlist,
+  removeFromWatchlist,
+  isInWatchlist,
+  addLiked,
+  removeLiked,
+  isLiked,
+} from '../lib/storage';
+import { getTVDetails, getSeasonEpisodes, TMDBEpisode, TMDBTVDetail } from '../lib/api';
 
 export interface Movie {
   id: string;
+  tmdb_id?: string;
+  imdb_id?: string;
   title: string;
   year: string;
   rating: string | number;
+  type: 'movie' | 'tv';
   imageUrl?: string;
   poster_url?: string;
+  embed_url?: string;
   genre?: string;
 }
 
@@ -62,15 +76,80 @@ function getDetails(id: string) {
 }
 
 export function MoviePreviewModal({ movie, onClose, onPlay }: MovieDetailModalProps) {
+  const navigate = useNavigate();
   const [inWatchlist, setInWatchlist] = useState(false);
   const [liked, setLiked] = useState(false);
+  const [tvDetails, setTvDetails] = useState<TMDBTVDetail | null>(null);
+  const [seasonEpisodes, setSeasonEpisodes] = useState<TMDBEpisode[]>([]);
+  const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
+  const [seasonDropdownOpen, setSeasonDropdownOpen] = useState(false);
+  const [episodesLoading, setEpisodesLoading] = useState(false);
 
   useEffect(() => {
     if (!movie) return;
+    setInWatchlist(isInWatchlist(movie.id));
+    setLiked(isLiked(movie.id));
     const handleKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [movie, onClose]);
+
+  useEffect(() => {
+    async function loadTvDetails() {
+      if (!movie || movie.type !== 'tv') {
+        setTvDetails(null);
+        setSeasonEpisodes([]);
+        setSelectedSeason(null);
+        return;
+      }
+
+      try {
+        const detail = await getTVDetails(movie.tmdb_id || movie.id);
+        setTvDetails(detail);
+        const firstSeason = detail.seasons?.find(s => s.season_number > 0)?.season_number || 1;
+        setSelectedSeason(firstSeason);
+      } catch (err) {
+        console.error('Failed to load TV details:', err);
+        setTvDetails(null);
+      }
+    }
+    loadTvDetails();
+  }, [movie]);
+
+  useEffect(() => {
+    async function loadSeason() {
+      if (!movie || movie.type !== 'tv' || selectedSeason == null) {
+        setSeasonEpisodes([]);
+        return;
+      }
+
+      setEpisodesLoading(true);
+      try {
+        const result = await getSeasonEpisodes(movie.tmdb_id || movie.id, selectedSeason);
+        setSeasonEpisodes(result.episodes || []);
+      } catch (err) {
+        console.error('Failed to load season episodes:', err);
+        setSeasonEpisodes([]);
+      } finally {
+        setEpisodesLoading(false);
+      }
+    }
+    loadSeason();
+  }, [movie, selectedSeason]);
+
+  const handlePlayNow = () => {
+    if (!movie) return;
+
+    if (movie.type === 'tv') {
+      const season = (selectedSeason ?? tvDetails?.seasons?.find((s) => s.season_number > 0)?.season_number) || 1;
+      const episode = seasonEpisodes[0]?.episode_number || 1;
+      navigate(`/watch/tv/${movie.tmdb_id || movie.id}/${season}/${episode}`);
+    } else {
+      navigate(`/watch/movie/${movie.tmdb_id || movie.id}`);
+    }
+
+    onClose();
+  };
 
   // Lock body scroll while open
   useEffect(() => {
@@ -89,7 +168,13 @@ export function MoviePreviewModal({ movie, onClose, onPlay }: MovieDetailModalPr
         const details = getDetails(movie.id);
         const ratingValue = typeof movie.rating === 'number' ? movie.rating : parseFloat(movie.rating as string);
         const ratingLabel = Number.isFinite(ratingValue) ? ratingValue.toFixed(1) : 'N/A';
-        const heroImage = movie.imageUrl || movie.poster_url || details.backdrop;
+        const heroImage = movie.imageUrl || movie.poster_url || tvDetails?.backdrop_path || details.backdrop;
+        const seriesDetails = movie.type === 'tv' && tvDetails ? tvDetails : null;
+        const seasons = seriesDetails?.seasons?.filter(s => s.season_number > 0) || [];
+        const seasonText = selectedSeason || seasons[0]?.season_number || 1;
+        const overviewText = movie.type === 'tv' ? seriesDetails?.overview || details.synopsis : details.synopsis;
+        const durationText = movie.type === 'tv' ? `${seriesDetails?.number_of_seasons || seasons.length} Seasons` : details.duration;
+        const maturityLabel = movie.type === 'tv' ? 'TV-14' : details.maturityRating;
         return (
           <motion.div
             key="modal-backdrop"
@@ -181,7 +266,7 @@ export function MoviePreviewModal({ movie, onClose, onPlay }: MovieDetailModalPr
                     color: "rgba(255,255,255,0.7)",
                   }}
                 >
-                  {details.maturityRating}
+                  {maturityLabel}
                 </span>
               </div>
 
@@ -219,7 +304,7 @@ export function MoviePreviewModal({ movie, onClose, onPlay }: MovieDetailModalPr
                     <Dot />
                     <span className="flex items-center gap-1.5 text-[#9A9A9A]">
                       <Clock className="w-3.5 h-3.5" />
-                      {details.duration}
+                      {durationText}
                     </span>
                     {movie.genre && (
                       <>
@@ -240,7 +325,7 @@ export function MoviePreviewModal({ movie, onClose, onPlay }: MovieDetailModalPr
                     whileHover={{ scale: 1.03 }}
                     whileTap={{ scale: 0.97 }}
                     transition={{ duration: 0.18 }}
-                    onClick={() => { onPlay?.(movie); onClose(); }}
+                    onClick={handlePlayNow}
                     className="flex items-center gap-2.5 px-7 py-3 rounded-lg text-sm font-semibold
                                text-white transition-all duration-280"
                     style={{
@@ -264,7 +349,29 @@ export function MoviePreviewModal({ movie, onClose, onPlay }: MovieDetailModalPr
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={() => setInWatchlist((v) => !v)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!movie) return;
+                      const id = movie.id;
+                      if (inWatchlist) {
+                        removeFromWatchlist(id);
+                        setInWatchlist(false);
+                      } else {
+                        addToWatchlist({
+                          id,
+                          tmdb_id: movie.id,
+                          imdb_id: movie.id,
+                          title: movie.title,
+                          poster: movie.poster_url || movie.imageUrl || '',
+                          type: movie.type || 'movie',
+                          year: movie.year || '',
+                          rating: String(movie.rating || ''),
+                          genre: movie.genre || '',
+                          addedAt: Date.now(),
+                        });
+                        setInWatchlist(true);
+                      }
+                    }}
                     className="flex items-center gap-2 px-5 py-3 rounded-lg text-sm font-medium
                                text-white transition-all duration-200"
                     style={{
@@ -290,7 +397,18 @@ export function MoviePreviewModal({ movie, onClose, onPlay }: MovieDetailModalPr
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
-                    onClick={() => setLiked((v) => !v)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!movie) return;
+                      const id = movie.id;
+                      if (liked) {
+                        removeLiked(id);
+                        setLiked(false);
+                      } else {
+                        addLiked(id);
+                        setLiked(true);
+                      }
+                    }}
                     className="w-11 h-11 rounded-lg flex items-center justify-center transition-all duration-200"
                     style={{
                       background: liked
@@ -312,6 +430,17 @@ export function MoviePreviewModal({ movie, onClose, onPlay }: MovieDetailModalPr
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!movie) return;
+                      const url = `${window.location.origin}/${movie.type === 'tv' ? 'tv' : 'movie'}/${movie.id}`;
+                      try {
+                        await navigator.clipboard.writeText(url);
+                        alert('Share link copied to clipboard');
+                      } catch {
+                        window.open(`mailto:?subject=Check out this title&body=${encodeURIComponent(url)}`);
+                      }
+                    }}
                     className="w-11 h-11 rounded-lg flex items-center justify-center transition-all duration-200"
                     style={{
                       background: "rgba(255,255,255,0.06)",
@@ -324,8 +453,80 @@ export function MoviePreviewModal({ movie, onClose, onPlay }: MovieDetailModalPr
 
                 {/* Synopsis */}
                 <div className="space-y-2">
-                  <p className="text-[#d4d4d4] text-sm leading-relaxed">{details.synopsis}</p>
+                  <p className="text-[#d4d4d4] text-sm leading-relaxed">{overviewText}</p>
                 </div>
+
+                {movie.type === 'tv' && (
+                  <div className="space-y-4 pt-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm text-[#9A9A9A] uppercase tracking-wider">Choose season</p>
+                        <p className="text-white text-sm">Season {seasonText}</p>
+                      </div>
+                      <button
+                        onClick={() => setSeasonDropdownOpen((open) => !open)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-white hover:bg-white/10 transition"
+                      >
+                        Season {seasonText}
+                        <ChevronRight className={`w-4 h-4 transition-transform ${seasonDropdownOpen ? 'rotate-90' : ''}`} />
+                      </button>
+                    </div>
+
+                    {seasonDropdownOpen && seasons.length > 0 && (
+                      <div className="space-y-2 rounded-2xl border border-white/10 bg-[#121212]/95 p-3">
+                        {seasons.map((season) => (
+                          <button
+                            key={season.season_number}
+                            onClick={() => {
+                              setSelectedSeason(season.season_number);
+                              setSeasonDropdownOpen(false);
+                            }}
+                            className={`w-full text-left px-4 py-3 rounded-xl transition-all ${selectedSeason === season.season_number ? 'bg-[#E50914]/15 text-white' : 'bg-white/5 text-[#ccc] hover:bg-white/10'}`}
+                          >
+                            Season {season.season_number}: {season.name || `${season.episode_count} Episodes`}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-white">Episodes</h3>
+                        {episodesLoading && <span className="text-sm text-[#999]">Loading...</span>}
+                      </div>
+
+                      {episodesLoading ? (
+                        <div className="py-6 flex justify-center">
+                          <div className="w-8 h-8 rounded-full border-2 border-[#E50914] border-t-transparent animate-spin" />
+                        </div>
+                      ) : seasonEpisodes.length > 0 ? (
+                        <div className="space-y-2">
+                          {seasonEpisodes.map((ep) => (
+                            <button
+                              key={ep.episode_number}
+                              onClick={() => {
+                                const season = selectedSeason || seasonText;
+                                navigate(`/watch/tv/${movie.tmdb_id || movie.id}/${season}/${ep.episode_number}`);
+                                onClose();
+                              }}
+                              className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left hover:bg-white/10 transition"
+                            >
+                              <div className="flex items-center justify-between gap-4">
+                                <span className="text-sm font-semibold text-white">Episode {ep.episode_number}</span>
+                                <span className="text-xs text-[#999]">{ep.air_date || ''}</span>
+                              </div>
+                              <p className="text-sm text-[#ccc] mt-2 truncate">
+                                {ep.name || `Episode ${ep.episode_number}`}
+                              </p>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-[#999]">No episode listing available for this season.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Divider */}
                 <div
@@ -375,6 +576,11 @@ export function MoviePreviewModal({ movie, onClose, onPlay }: MovieDetailModalPr
 
                 {/* More like this teaser */}
                 <button
+                  onClick={() => {
+                    if (!movie) return;
+                    navigate(movie.type === 'tv' ? `/tv/${movie.id}` : `/movie/${movie.id}`);
+                    onClose();
+                  }}
                   className="w-full flex items-center justify-between py-3 px-4 rounded-xl
                              text-sm font-medium text-[#9A9A9A] hover:text-white
                              transition-all duration-200 group"

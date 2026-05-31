@@ -154,8 +154,17 @@ function buildEmbedSearchParams(options?: {
   if (options?.lang) params.set('lang', options.lang);
   // Hide the embed player's built-in UI — watch party uses custom controls only
   params.set('showTitle', 'false');
+  params.set('showLogo', 'false');
+  params.set('showBranding', 'false');
+  params.set('showControls', 'false');
   params.set('controls', 'false');
+  params.set('controls', '0');
   params.set('hideControls', 'true');
+  params.set('chromeless', 'true');
+  params.set('ui', 'false');
+  params.set('hideUI', 'true');
+  params.set('hideTopBar', 'true');
+  params.set('hideBottomBar', 'true');
   return params;
 }
 

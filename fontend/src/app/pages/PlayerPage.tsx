@@ -393,7 +393,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
 
     setConnStatus('connecting');
 
-    const newSocket = io(BACKEND_URL, {
+    const newSocket = io(`${BACKEND_URL}/watch-party`, {
       transports: ['polling', 'websocket'],
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
@@ -862,7 +862,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim() || !socket) return;
+    if (!chatInput.trim() || !socket || !roomId) return;
     socket.emit('send_message', { roomId, text: chatInput });
     setChatInput('');
   };

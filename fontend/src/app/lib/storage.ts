@@ -34,6 +34,7 @@ const STORAGE_KEYS = {
   WATCH_PROGRESS: 'movietime_watch_progress',
   WATCHLIST: 'movietime_watchlist',
   WATCH_HISTORY: 'movietime_watch_history',
+  WATCH_LIKES: 'movietime_watch_likes',
   PREFERENCES: 'movietime_preferences',
 } as const;
 
@@ -132,6 +133,11 @@ export interface WatchlistItem {
   addedAt: number;
 }
 
+export interface LikedItem {
+  id: string;
+  addedAt: number;
+}
+
 export function addToWatchlist(item: WatchlistItem): void {
   const list = getWatchlist();
   if (!list.find(i => i.id === item.id)) {
@@ -169,6 +175,32 @@ export function getWatchlist(): WatchlistItem[] {
   } catch {
     return [];
   }
+}
+
+export function getLikedItems(): LikedItem[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.WATCH_LIKES);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function isLiked(id: string): boolean {
+  return getLikedItems().some(item => item.id === id);
+}
+
+export function addLiked(id: string): void {
+  const list = getLikedItems();
+  if (!list.some(item => item.id === id)) {
+    list.unshift({ id, addedAt: Date.now() });
+    localStorage.setItem(STORAGE_KEYS.WATCH_LIKES, JSON.stringify(list));
+  }
+}
+
+export function removeLiked(id: string): void {
+  const list = getLikedItems().filter(item => item.id !== id);
+  localStorage.setItem(STORAGE_KEYS.WATCH_LIKES, JSON.stringify(list));
 }
 
 // ---- Watch History ----

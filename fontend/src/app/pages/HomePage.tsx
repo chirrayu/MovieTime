@@ -25,15 +25,18 @@ export function HomePage() {
     setShowPlayer(false);
   };
 
-  const closeModal = () => {
+  const closeModal = (keepSelected = false) => {
     setIsModalOpen(false);
-    setSelectedMovie(null);
+    if (!keepSelected) {
+      setSelectedMovie(null);
+    }
     document.body.style.overflow = '';
   };
 
-  const handlePlay = () => {
+  const handlePlay = (movie: any) => {
+    setSelectedMovie(movie);
     setShowPlayer(true);
-    closeModal();
+    closeModal(true);
   };
 
   useEffect(() => {
@@ -159,7 +162,11 @@ export function HomePage() {
       {/* Lazy‑loaded Player */}
       {showPlayer && selectedMovie && (
         <Suspense fallback={<div className="fixed inset-0 flex items-center justify-center bg-black text-white">Loading player…</div>}>
-          <LazyPlayer movie={selectedMovie} />
+          <LazyPlayer
+            embedUrl={selectedMovie.embed_url}
+            type={selectedMovie.type}
+            title={selectedMovie.title}
+          />
         </Suspense>
       )}
     </div>
