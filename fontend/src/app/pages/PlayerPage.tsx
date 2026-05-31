@@ -724,13 +724,14 @@ export function PlayerPage({ type }: PlayerPageProps) {
         saveWatchProgress({
           id,
           type,
-          title: info?.title || playerTitle || 'Unknown',
+          title: info?.title || playerTitle || `Title ${id}`,
           poster: info?.poster || playerPoster || '',
           progress,
           duration,
           timestamp: Date.now(),
           season: seasonNum,
           episode: episodeNum,
+          episodeTitle: info?.episodeTitle,
         });
       },
       onPause: (progress, info) => {

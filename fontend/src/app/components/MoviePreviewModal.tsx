@@ -18,8 +18,9 @@ export interface Movie {
   id: string;
   title: string;
   year: string;
-  rating: number;
-  imageUrl: string;
+  rating: string | number;
+  imageUrl?: string;
+  poster_url?: string;
   genre?: string;
 }
 
@@ -73,15 +74,22 @@ export function MoviePreviewModal({ movie, onClose, onPlay }: MovieDetailModalPr
 
   // Lock body scroll while open
   useEffect(() => {
-    if (movie) document.body.style.overflow = "hidden";
-    else document.body.style.overflow = "";
-    return () => { document.body.style.overflow = ""; };
+    const previousOverflow = document.body.style.overflow;
+    if (movie) {
+      document.body.style.overflow = "hidden";
+    }
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
   }, [movie]);
 
   return (
     <AnimatePresence>
       {movie && (() => {
         const details = getDetails(movie.id);
+        const ratingValue = typeof movie.rating === 'number' ? movie.rating : parseFloat(movie.rating as string);
+        const ratingLabel = Number.isFinite(ratingValue) ? ratingValue.toFixed(1) : 'N/A';
+        const heroImage = movie.imageUrl || movie.poster_url || details.backdrop;
         return (
           <motion.div
             key="modal-backdrop"
@@ -111,7 +119,7 @@ export function MoviePreviewModal({ movie, onClose, onPlay }: MovieDetailModalPr
               {/* ── Hero image ── */}
               <div className="relative w-full aspect-video overflow-hidden rounded-t-2xl">
                 <img
-                  src={details.backdrop}
+                  src={heroImage}
                   alt={movie.title}
                   className="w-full h-full object-cover"
                 />
@@ -201,7 +209,7 @@ export function MoviePreviewModal({ movie, onClose, onPlay }: MovieDetailModalPr
                   <div className="flex items-center gap-3 text-sm flex-wrap">
                     <span className="flex items-center gap-1.5 text-[#E50914] font-semibold">
                       <Star className="w-3.5 h-3.5" fill="currentColor" />
-                      {movie.rating.toFixed(1)}
+                      {ratingLabel}
                     </span>
                     <Dot />
                     <span className="flex items-center gap-1.5 text-[#9A9A9A]">
