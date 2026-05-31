@@ -167,7 +167,7 @@ export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, g
                 {inList ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
               </button>
             </div>
-            <h3 className="text-white text-sm font-medium line-clamp-1">{title}</h3>
+            <h3 className="text-white text-sm font-medium line-clamp-1">{title || 'Unknown Title'}</h3>
           </motion.div>
         </motion.div>
 

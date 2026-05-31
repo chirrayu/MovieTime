@@ -4,7 +4,7 @@ import { MovieRow } from '../components/MovieRow';
 import { MovieCard } from '../components/MovieCard';
 import { MoviePreviewModal } from '../components/MoviePreviewModal';
 import { fetchLatestMovies, fetchLatestTVShows } from '../lib/api';
-import { getContinueWatching } from '../lib/storage';
+import { getContinueWatching, type WatchProgress } from '../lib/storage';
 import type { MovieItem, TVShowItem } from '../lib/api';
 
 const LazyPlayer = lazy(() => import('../components/Player'));
@@ -12,7 +12,7 @@ const LazyPlayer = lazy(() => import('../components/Player'));
 export function HomePage() {
   const [movies, setMovies] = useState<MovieItem[]>([]);
   const [tvShows, setTvShows] = useState<TVShowItem[]>([]);
-  const [continueWatching, setContinueWatching] = useState<any[]>([]);
+  const [continueWatching, setContinueWatching] = useState<WatchProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedMovie, setSelectedMovie] = useState<MovieItem | null>(null);
@@ -23,7 +23,6 @@ export function HomePage() {
     setSelectedMovie(movie);
     setIsModalOpen(true);
     setShowPlayer(false);
-    document.body.style.overflow = 'hidden';
   };
 
   const closeModal = () => {
@@ -92,8 +91,8 @@ export function HomePage() {
                   <MovieCard
                     tmdb_id={item.id}
                     imdb_id={item.id}
-                    title={item.title}
-                    year=""
+                    title={item.title || item.episodeTitle || `Title ${item.id}`}
+                    year={item.type === 'movie' ? '' : item.season && item.episode ? `S${item.season} · E${item.episode}` : ''}
                     rating=""
                     poster_url={item.poster}
                     type={item.type}
