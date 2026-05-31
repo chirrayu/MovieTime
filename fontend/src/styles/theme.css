@@ -2,26 +2,28 @@
 
 :root {
   --font-size: 16px;
-  --background: #070707;
-  --foreground: #F5F5F5;
+  --background: #050505;
+  --foreground: #F7F7F7;
+  --surface: #111111;
+  --surface-strong: #161616;
   --card: #121212;
-  --card-foreground: #F5F5F5;
-  --popover: #121212;
-  --popover-foreground: #F5F5F5;
+  --card-foreground: #F7F7F7;
+  --popover: #141414;
+  --popover-foreground: #F7F7F7;
   --primary: #E50914;
-  --primary-foreground: #F5F5F5;
+  --primary-foreground: #FFFFFF;
   --secondary: rgba(255, 255, 255, 0.08);
-  --secondary-foreground: #F5F5F5;
-  --muted: #1a1a1a;
-  --muted-foreground: #9A9A9A;
+  --secondary-foreground: #DEDEDE;
+  --muted: #1f1f1f;
+  --muted-foreground: #A3A3A3;
   --accent: #E50914;
-  --accent-foreground: #F5F5F5;
+  --accent-foreground: #FFFFFF;
   --destructive: #E50914;
-  --destructive-foreground: #F5F5F5;
-  --border: rgba(255, 255, 255, 0.1);
+  --destructive-foreground: #FFFFFF;
+  --border: rgba(255, 255, 255, 0.08);
   --input: rgba(255, 255, 255, 0.05);
   --input-background: rgba(255, 255, 255, 0.05);
-  --switch-background: rgba(255, 255, 255, 0.2);
+  --switch-background: rgba(255, 255, 255, 0.16);
   --font-weight-medium: 500;
   --font-weight-normal: 400;
   --ring: rgba(229, 9, 20, 0.25);
@@ -30,31 +32,31 @@
   --chart-3: #9A9A9A;
   --chart-4: #070707;
   --chart-5: #121212;
-  --radius: 0.5rem;
-  --sidebar: #121212;
-  --sidebar-foreground: #F5F5F5;
+  --radius: 0.85rem;
+  --sidebar: #0f0f0f;
+  --sidebar-foreground: #F7F7F7;
   --sidebar-primary: #E50914;
-  --sidebar-primary-foreground: #F5F5F5;
   --sidebar-accent: rgba(229, 9, 20, 0.18);
-  --sidebar-accent-foreground: #F5F5F5;
-  --sidebar-border: rgba(255, 255, 255, 0.05);
+  --sidebar-border: rgba(255, 255, 255, 0.06);
   --sidebar-ring: rgba(229, 9, 20, 0.25);
 }
 
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
+  --surface: oklch(0.165 0 0);
+  --surface-strong: oklch(0.135 0 0);
   --card: oklch(0.145 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.145 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --primary: oklch(0.579 0.302 29.452);
+  --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
+  --accent: oklch(0.579 0.302 29.452);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.396 0.141 25.723);
   --destructive-foreground: oklch(0.637 0.237 25.331);
@@ -71,9 +73,7 @@
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.269 0 0);
   --sidebar-ring: oklch(0.439 0 0);
 }
@@ -127,9 +127,10 @@
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', 'Poppins', system-ui, -apple-system, sans-serif;
-    background: radial-gradient(circle at top left, rgba(229, 9, 20, 0.12), transparent 30%),
+    min-height: 100vh;
+    background: radial-gradient(circle at top left, rgba(229, 9, 20, 0.12), transparent 28%),
                 radial-gradient(circle at bottom right, rgba(255, 0, 0, 0.08), transparent 35%),
-                #070707;
+                var(--background);
     background-attachment: fixed;
   }
 
@@ -143,11 +144,6 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
-
-  /**
-  * Default typography styles for HTML elements (h1-h4, p, label, button, input).
-  * These are in @layer base, so Tailwind utility classes (like text-sm, text-lg) automatically override them.
-  */
 
   html {
     font-size: var(--font-size);

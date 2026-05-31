@@ -8,9 +8,11 @@ interface MovieRowProps {
   title: string;
   items: (MovieItem | TVShowItem)[];
   loading?: boolean;
+  // Optional custom rendering for each card, useful for preview modal handling
+  renderCard?: (item: MovieItem | TVShowItem) => JSX.Element;
 }
 
-export function MovieRow({ title, items, loading }: MovieRowProps) {
+export function MovieRow({ title, items, loading, renderCard }: MovieRowProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);
@@ -97,16 +99,20 @@ export function MovieRow({ title, items, loading }: MovieRowProps) {
         >
           {items.map((item, idx) => (
             <div key={`${item.tmdb_id}-${idx}`} className="flex-none w-44">
-              <MovieCard
-                tmdb_id={item.tmdb_id}
-                imdb_id={item.imdb_id}
-                title={item.title}
-                year={item.year}
-                rating={item.rating}
-                poster_url={item.poster_url}
-                genre={item.genre}
-                type={item.type}
-              />
+              {renderCard ? (
+                renderCard(item)
+              ) : (
+                <MovieCard
+                  tmdb_id={item.tmdb_id}
+                  imdb_id={item.imdb_id}
+                  title={item.title}
+                  year={item.year}
+                  rating={item.rating}
+                  poster_url={item.poster_url}
+                  genre={item.genre}
+                  type={item.type}
+                />
+              )}
             </div>
           ))}
         </div>

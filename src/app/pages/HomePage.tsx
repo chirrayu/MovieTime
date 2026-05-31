@@ -12,6 +12,7 @@ export function HomePage() {
   const [tvShows, setTVShows] = useState<TVShowItem[]>([]);
   const [heroItem, setHeroItem] = useState<MovieItem | TVShowItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const continueWatching = getContinueWatching();
 
   useEffect(() => {
@@ -37,7 +38,9 @@ export function HomePage() {
           setHeroItem(allItems[0]);
         }
       } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
         console.error('Failed to load homepage data:', err);
+        setError(message);
       } finally {
         setLoading(false);
       }
@@ -49,6 +52,12 @@ export function HomePage() {
     <div>
       {/* Hero Banner */}
       <div className="p-6 pt-6">
+        {error && (
+          <div className="mb-4 rounded-2xl border border-[#E50914]/50 bg-[#1a1a1a]/90 p-4 text-sm text-[#f1f1f1] shadow-sm">
+            <strong className="block text-white mb-1">Connection issue</strong>
+            <span>Unable to fetch TMDB data right now. Showing fallback content where available.</span>
+          </div>
+        )}
         <HeroBanner item={heroItem} loading={loading} />
       </div>
 

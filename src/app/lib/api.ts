@@ -183,49 +183,69 @@ export function getTVEmbedUrl(id: string, season: number, episode: number, optio
 
 export async function fetchLatestMovies(page: number = 1): Promise<PaginatedResponse<MovieItem>> {
   if (!TMDB_API_KEY) {
-    const res = await fetch(`${VIDAPI_BASE}/movies/latest/page-${page}.json`);
-    if (!res.ok) throw new Error(`Failed to fetch movies: ${res.status}`);
-    return res.json();
+    return fetchVidLatestMovies(page);
   }
-  
-  // Use TMDB Popular Movies for a better global catalog
-  const data = await getPopular('movie', page);
-  // mapTMDBToItem requires a TMDBSearchResult with media_type, so we force it for popular results
-  const items = data.results.map(r => mapTMDBToItem({ ...r, media_type: 'movie' })).filter(Boolean) as MovieItem[];
-  
-  return {
-    page,
-    per_page: 20,
-    total: data.total_results || 10000,
-    total_pages: data.total_pages,
-    items,
-  };
+
+  try {
+    // Use TMDB Popular Movies for a better global catalog
+    const data = await getPopular('movie', page);
+    // mapTMDBToItem requires a TMDBSearchResult with media_type, so we force it for popular results
+    const items = data.results.map(r => mapTMDBToItem({ ...r, media_type: 'movie' })).filter(Boolean) as MovieItem[];
+
+    return {
+      page,
+      per_page: 20,
+      total: data.total_results || 10000,
+      total_pages: data.total_pages,
+      items,
+    };
+  } catch (err) {
+    console.warn('TMDB popular movies failed, falling back to VidAPI:', err);
+    return fetchVidLatestMovies(page);
+  }
 }
 
 export async function fetchLatestTVShows(page: number = 1): Promise<PaginatedResponse<TVShowItem>> {
   if (!TMDB_API_KEY) {
-    const res = await fetch(`${VIDAPI_BASE}/tvshows/latest/page-${page}.json`);
-    if (!res.ok) throw new Error(`Failed to fetch TV shows: ${res.status}`);
-    return res.json();
+    return fetchVidLatestTVShows(page);
   }
 
-  // Use TMDB Popular TV Shows
-  const data = await getPopular('tv', page);
-  const items = data.results.map(r => mapTMDBToItem({ ...r, media_type: 'tv' })).filter(Boolean) as TVShowItem[];
-  
-  return {
-    page,
-    per_page: 20,
-    total: data.total_results || 10000,
-    total_pages: data.total_pages,
-    items,
-  };
+  try {
+    // Use TMDB Popular TV Shows
+    const data = await getPopular('tv', page);
+    const items = data.results.map(r => mapTMDBToItem({ ...r, media_type: 'tv' })).filter(Boolean) as TVShowItem[];
+
+    return {
+      page,
+      per_page: 20,
+      total: data.total_results || 10000,
+      total_pages: data.total_pages,
+      items,
+    };
+  } catch (err) {
+    console.warn('TMDB popular TV shows failed, falling back to VidAPI:', err);
+    return fetchVidLatestTVShows(page);
+  }
 }
 
 export async function fetchLatestEpisodes(page: number = 1): Promise<PaginatedResponse<EpisodeItem>> {
   const res = await fetch(`${VIDAPI_BASE}/episodes/latest/page-${page}.json`);
   if (!res.ok) throw new Error(`Failed to fetch episodes: ${res.status}`);
   return res.json();
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+  return res.json();
+}
+
+async function fetchVidLatestMovies(page: number = 1): Promise<PaginatedResponse<MovieItem>> {
+  return fetchJson(`${VIDAPI_BASE}/movies/latest/page-${page}.json`);
+}
+
+async function fetchVidLatestTVShows(page: number = 1): Promise<PaginatedResponse<TVShowItem>> {
+  return fetchJson(`${VIDAPI_BASE}/tvshows/latest/page-${page}.json`);
 }
 
 // ---- TMDB Search & Details ----
@@ -250,7 +270,13 @@ export async function searchMulti(query: string, page: number = 1): Promise<{
     // Fallback: search through VidAPI listings
     return { results: [], total_pages: 0, total_results: 0 };
   }
-  return tmdbFetch('/search/multi', { query, page: String(page) });
+
+  try {
+    return await tmdbFetch('/search/multi', { query, page: String(page) });
+  } catch (err) {
+    console.warn('TMDB search failed, returning empty results:', err);
+    return { results: [], total_pages: 0, total_results: 0 };
+  }
 }
 
 export async function getMovieDetails(tmdbId: string): Promise<TMDBMovieDetail> {

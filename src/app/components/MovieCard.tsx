@@ -109,10 +109,12 @@ export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster, poste
           {/* Play Button */}
           <div className="absolute inset-0 flex items-center justify-center">
             <motion.button
+              type="button"
               initial={{ scale: 0.6, opacity: 0 }}
               animate={{ scale: isHovered ? 1 : 0.6, opacity: isHovered ? 1 : 0 }}
               transition={{ duration: 0.3, delay: 0.05 }}
               onClick={handlePlay}
+              aria-label={`Play ${title}`}
               className="w-14 h-14 rounded-full bg-[#E50914] flex items-center justify-center
                        shadow-[0_0_30px_rgba(229,9,20,0.6)] hover:shadow-[0_0_40px_rgba(229,9,20,0.8)]
                        hover:bg-[#ff1a25] transition-all duration-200"
@@ -139,7 +141,9 @@ export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster, poste
                 )}
               </div>
               <button
+                type="button"
                 onClick={handleWatchlist}
+                aria-label={inList ? `Remove ${title} from watchlist` : `Add ${title} to watchlist`}
                 className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 border
                   ${inList
                     ? 'bg-[#E50914]/20 border-[#E50914]/50 text-[#E50914]'

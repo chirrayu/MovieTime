@@ -1,43 +1,60 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { HeroBanner } from '../components/HeroBanner';
 import { MovieRow } from '../components/MovieRow';
 import { MovieCard } from '../components/MovieCard';
+import { MoviePreviewModal } from '../components/MoviePreviewModal';
 import { fetchLatestMovies, fetchLatestTVShows } from '../lib/api';
 import { getContinueWatching } from '../lib/storage';
-import { cacheItems } from '../lib/cache';
 import type { MovieItem, TVShowItem } from '../lib/api';
+
+const LazyPlayer = lazy(() => import('../components/Player'));
 
 export function HomePage() {
   const [movies, setMovies] = useState<MovieItem[]>([]);
-  const [tvShows, setTVShows] = useState<TVShowItem[]>([]);
-  const [heroItem, setHeroItem] = useState<MovieItem | TVShowItem | null>(null);
+  const [tvShows, setTvShows] = useState<TVShowItem[]>([]);
+  const [continueWatching, setContinueWatching] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const continueWatching = getContinueWatching();
+  const [error, setError] = useState<string | null>(null);
+  const [selectedMovie, setSelectedMovie] = useState<MovieItem | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showPlayer, setShowPlayer] = useState(false);
+
+  const handleCardClick = (movie: any) => {
+    setSelectedMovie(movie);
+    setIsModalOpen(true);
+    setShowPlayer(false);
+    document.body.style.overflow = 'hidden';
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setSelectedMovie(null);
+    document.body.style.overflow = '';
+  };
+
+  const handlePlay = () => {
+    setShowPlayer(true);
+    closeModal();
+  };
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [moviesRes, tvRes] = await Promise.all([
-          fetchLatestMovies(1),
-          fetchLatestTVShows(1),
+        setLoading(true);
+        const [moviesResp, tvResp] = await Promise.all([
+          fetchLatestMovies(),
+          fetchLatestTVShows()
         ]);
-
-        setMovies(moviesRes.items);
-        setTVShows(tvRes.items);
-
-        // Cache all items for instant detail page access
-        cacheItems([...moviesRes.items, ...tvRes.items]);
-
-        // Pick a random high-rated item for the hero
-        const allItems = [...moviesRes.items, ...tvRes.items];
-        const highRated = allItems.filter(i => parseFloat(i.rating) >= 7);
-        if (highRated.length > 0) {
-          setHeroItem(highRated[Math.floor(Math.random() * Math.min(highRated.length, 5))]);
-        } else if (allItems.length > 0) {
-          setHeroItem(allItems[0]);
-        }
+        const moviesList = (moviesResp && 'items' in moviesResp) ? moviesResp.items : moviesResp;
+        const tvList = (tvResp && 'items' in tvResp) ? tvResp.items : tvResp;
+        setMovies(Array.isArray(moviesList) ? moviesList : []);
+        setTvShows(Array.isArray(tvList) ? tvList : []);
+        const cwProgress = getContinueWatching();
+        setContinueWatching(cwProgress);
       } catch (err) {
-        console.error('Failed to load homepage data:', err);
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
+        console.error('Failed to load home page data:', err);
       } finally {
         setLoading(false);
       }
@@ -45,10 +62,18 @@ export function HomePage() {
     loadData();
   }, []);
 
+  const heroItem = movies[0] || null;
+
   return (
-    <div>
+    <div className="pb-10">
       {/* Hero Banner */}
       <div className="p-6 pt-6">
+        {error && (
+          <div className="mb-4 rounded-2xl border border-[#E50914]/50 bg-[#1a1a1a]/90 p-4 text-sm text-[#f1f1f1] shadow-sm">
+            <strong className="block text-white mb-1">Connection issue</strong>
+            <span>Unable to fetch TMDB data right now. Showing fallback content where available.</span>
+          </div>
+        )}
         <HeroBanner item={heroItem} loading={loading} />
       </div>
 
@@ -82,25 +107,62 @@ export function HomePage() {
         )}
 
         {/* Latest Movies */}
-        <MovieRow title="🔥 Latest Movies" items={movies} loading={loading} />
+        <MovieRow
+          title="🔥 Latest Movies"
+          items={movies}
+          loading={loading}
+          renderCard={(movie) => (
+            <MovieCard {...movie} onCardClick={handleCardClick} />
+          )}
+        />
 
         {/* Latest TV Shows */}
-        <MovieRow title="📺 Trending Series" items={tvShows} loading={loading} />
+        <MovieRow
+          title="📺 Trending Series"
+          items={tvShows}
+          loading={loading}
+          renderCard={(show) => (
+            <MovieCard {...show} onCardClick={handleCardClick} />
+          )}
+        />
 
         {/* High Rated Movies */}
         <MovieRow
           title="⭐ Top Rated"
-          items={movies.filter(m => parseFloat(m.rating) >= 7).slice(0, 12)}
+          items={Array.isArray(movies) ? movies.filter(m => parseFloat(m.rating) >= 7).slice(0, 12) : []}
           loading={loading}
+          renderCard={(movie) => (
+            <MovieCard {...movie} onCardClick={handleCardClick} />
+          )}
         />
 
         {/* Action Movies */}
         <MovieRow
           title="💥 Action & Thrillers"
-          items={movies.filter(m => m.genre?.toLowerCase().includes('action') || m.genre?.toLowerCase().includes('thriller'))}
+          items={Array.isArray(movies) ? movies.filter(m => m.genre?.toLowerCase().includes('action') || m.genre?.toLowerCase().includes('thriller')) : []}
           loading={loading}
+          renderCard={(movie) => (
+            <MovieCard {...movie} onCardClick={handleCardClick} />
+          )}
         />
       </div>
+
+      {/* Preview Modal */}
+      {isModalOpen && selectedMovie && (
+        <MoviePreviewModal
+          key={selectedMovie.tmdb_id || selectedMovie.imdb_id}
+          movie={selectedMovie}
+          onClose={closeModal}
+          onPlay={handlePlay}
+        />
+      )}
+
+      {/* Lazy‑loaded Player */}
+      {showPlayer && selectedMovie && (
+        <Suspense fallback={<div className="fixed inset-0 flex items-center justify-center bg-black text-white">Loading player…</div>}>
+          <LazyPlayer movie={selectedMovie} />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -1,9 +1,10 @@
 import express from 'express';
 import http from 'http';
-import { Server, Socket } from 'socket.io';
+import { Server } from 'socket.io';
 import cors from 'cors';
-import { RoomState, User, ChatMessage } from './types';
-import { v4 as uuidv4 } from 'uuid';
+import { setupSyncNamespace } from './sockets/sync.namespace';
+import { setupChatNamespace } from './sockets/chat.namespace';
+import { setupPresenceNamespace } from './sockets/presence.namespace';
 
 const ALLOWED_ORIGINS = [
   'https://movie-time-orcin.vercel.app',
@@ -29,281 +30,19 @@ const io = new Server(server, {
     methods: ['GET', 'POST'],
     credentials: true
   },
-  // Allow both polling and websocket so the handshake works cross-origin
   transports: ['polling', 'websocket']
 });
 
-// In-memory store for rooms
-const rooms: Record<string, RoomState> = {};
-const disconnectTimeouts: Record<string, Record<string, ReturnType<typeof setTimeout>>> = {};
-const ROOM_GRACE_PERIOD_MS = 15000;
+// Setup scalable namespace modules
+setupSyncNamespace(io);
+setupChatNamespace(io);
+setupPresenceNamespace(io);
 
 app.get('/health', (req, res) => {
-  res.send('Watch Party Server is running');
-});
-
-io.on('connection', (socket: Socket) => {
-  console.log(`User connected: ${socket.id}`);
-
-  // Heartbeat to keep connection alive and sync latency if needed
-  socket.on('ping', (cb) => {
-    if (typeof cb === 'function') cb();
-  });
-
-  socket.on('join_room', ({ roomId, username, userId, mediaId, mediaType }: { roomId: string, username: string, userId?: string, mediaId?: string, mediaType?: 'movie' | 'tv' }) => {
-    let room = rooms[roomId];
-
-    if (!room) {
-      // Create new room if it doesn't exist
-      room = {
-        roomId,
-        hostId: socket.id,
-        users: {},
-        playbackState: {
-          isPlaying: false,
-          timestamp: 0,
-          lastUpdateTime: Date.now(),
-          mediaId,
-          mediaType
-        }
-      };
-      rooms[roomId] = room;
-    }
-
-    if (room.users[socket.id]) {
-      socket.join(roomId);
-      socket.emit('room_state_update', room);
-      return;
-    }
-
-    if (userId) {
-      const existingEntry = Object.values(room.users).find((user) => user.userId === userId);
-      if (existingEntry) {
-        const previousSocketId = existingEntry.id;
-        const wasHost = room.hostId === previousSocketId;
-        if (disconnectTimeouts[roomId]?.[previousSocketId]) {
-          clearTimeout(disconnectTimeouts[roomId][previousSocketId]);
-          delete disconnectTimeouts[roomId][previousSocketId];
-        }
-        delete room.users[previousSocketId];
-
-        const updatedUser: User = {
-          ...existingEntry,
-          id: socket.id,
-          userId,
-          username: username || existingEntry.username,
-          isHost: wasHost,
-          isConnected: true,
-        };
-
-        room.users[socket.id] = updatedUser;
-        if (wasHost) {
-          room.hostId = socket.id;
-        }
-        socket.join(roomId);
-        socket.emit('room_state_update', room);
-        socket.to(roomId).emit('user_joined', updatedUser);
-        if (!updatedUser.isHost && room.hostId && room.hostId !== socket.id) {
-          io.to(room.hostId).emit('request_host_timeline', { roomId, requesterId: socket.id });
-        }
-        return;
-      }
-    }
-
-    const isHost = room.hostId === socket.id || Object.keys(room.users).length === 0;
-    
-    // In case the host left and someone else joins, or it's the first user
-    if (isHost && room.hostId !== socket.id) {
-      room.hostId = socket.id;
-    }
-
-    const newUser: User = {
-      id: socket.id,
-      userId,
-      username: username || `User-${socket.id.substring(0, 4)}`,
-      isHost,
-      isConnected: true,
-    };
-
-    room.users[socket.id] = newUser;
-    socket.join(roomId);
-
-    // Send the current room state to the newly joined user
-    socket.emit('room_state_update', room);
-
-    // Notify others that a new user joined
-    socket.to(roomId).emit('user_joined', newUser);
-    if (!newUser.isHost && room.hostId && room.hostId !== socket.id) {
-      io.to(room.hostId).emit('request_host_timeline', { roomId, requesterId: socket.id });
-    }
-    
-    console.log(`User ${newUser.username} (${socket.id}) joined room ${roomId}`);
-  });
-
-  socket.on('request_host_timeline', ({ roomId, requesterId }: { roomId: string; requesterId: string }) => {
-    const room = rooms[roomId];
-    if (!room || !room.hostId || room.hostId === socket.id) return;
-    if (!room.users[requesterId]) return;
-    io.to(room.hostId).emit('request_host_timeline', { roomId, requesterId });
-  });
-
-  socket.on('host_timeline', (payload: { roomId: string; requesterId?: string; type: 'play' | 'pause' | 'seek'; currentTime: number; sentAt?: number; mediaId?: string; mediaType?: 'movie' | 'tv' }) => {
-    const room = rooms[payload.roomId];
-    if (!room || room.hostId !== socket.id) return;
-    if (typeof payload.currentTime !== 'number') return;
-
-    room.playbackState.timestamp = payload.currentTime;
-    room.playbackState.lastUpdateTime = Date.now();
-    room.playbackState.isPlaying = payload.type === 'play';
-    if (payload.mediaId) room.playbackState.mediaId = payload.mediaId;
-    if (payload.mediaType) room.playbackState.mediaType = payload.mediaType;
-
-    if (payload.requesterId && room.users[payload.requesterId]) {
-      io.to(payload.requesterId).emit('host_timeline', payload);
-    } else {
-      socket.to(payload.roomId).emit('host_timeline', payload);
-    }
-  });
-
-  socket.on('sync', (payload: { roomId: string; type: 'play' | 'pause' | 'seek'; currentTime: number }) => {
-    console.log('RECEIVED', payload, 'from', socket.id);
-
-    const room = rooms[payload.roomId];
-    if (!room) {
-      console.log('REJECTED: room not found', payload.roomId);
-      return;
-    }
-
-    if (room.hostId !== socket.id) {
-      console.log('REJECTED: sender is not host', { hostId: room.hostId, sender: socket.id });
-      return;
-    }
-
-    room.playbackState.timestamp = payload.currentTime;
-    room.playbackState.lastUpdateTime = Date.now();
-    if (payload.type === 'play') room.playbackState.isPlaying = true;
-    else if (payload.type === 'pause') room.playbackState.isPlaying = false;
-
-    const broadcast = {
-      roomId: payload.roomId,
-      type: payload.type,
-      currentTime: payload.currentTime,
-      sentAt: Date.now(),
-    };
-    console.log('BROADCAST', broadcast);
-    socket.to(payload.roomId).emit('sync', broadcast);
-  });
-
-  socket.on('sync_state', (payload: { roomId?: string; type?: 'play' | 'pause' | 'seek'; currentTime?: number; sentAt?: number }) => {
-    if (
-      !payload?.roomId ||
-      !payload?.type ||
-      typeof payload.currentTime !== 'number' ||
-      !['play', 'pause', 'seek'].includes(payload.type)
-    ) {
-      return;
-    }
-
-    const room = rooms[payload.roomId];
-    if (!room) return;
-    if (room.hostId !== socket.id) return;
-
-    room.playbackState.timestamp = payload.currentTime;
-    room.playbackState.lastUpdateTime = Date.now();
-    if (payload.type === 'play') room.playbackState.isPlaying = true;
-    else if (payload.type === 'pause') room.playbackState.isPlaying = false;
-
-    socket.to(payload.roomId).emit('sync_state', {
-      roomId: payload.roomId,
-      type: payload.type,
-      currentTime: payload.currentTime,
-      sentAt: payload.sentAt ?? Date.now(),
-    });
-  });
-
-  // Embedded chat functionality
-  socket.on('send_message', ({ roomId, text }: { roomId: string, text: string }) => {
-    const room = rooms[roomId];
-    if (!room || !room.users[socket.id]) return;
-
-    const user = room.users[socket.id];
-    const message: ChatMessage = {
-      id: uuidv4(), // Need uuid here
-      userId: user.id,
-      username: user.username,
-      text,
-      timestamp: Date.now()
-    };
-
-    io.to(roomId).emit('new_message', message);
-  });
-
-  // WebRTC signaling for peer-to-peer audio and video mesh
-  socket.on('webrtc_signal', ({ to, signal }: { to: string, signal: any }) => {
-    io.to(to).emit('webrtc_signal', {
-      from: socket.id,
-      signal
-    });
-  });
-
-  socket.on('join_call', ({ roomId }: { roomId: string }) => {
-    socket.to(roomId).emit('user_joined_call', socket.id);
-  });
-
-  socket.on('leave_call', ({ roomId }: { roomId: string }) => {
-    socket.to(roomId).emit('user_left_call', socket.id);
-  });
-
-  socket.on('disconnect', () => {
-    console.log(`User disconnected: ${socket.id}`);
-    
-    // Find rooms the user was in
-    for (const roomId in rooms) {
-      const room = rooms[roomId];
-      if (room.users[socket.id]) {
-        const user = room.users[socket.id];
-        user.isConnected = false;
-
-        if (!disconnectTimeouts[roomId]) disconnectTimeouts[roomId] = {};
-        if (disconnectTimeouts[roomId][socket.id]) {
-          clearTimeout(disconnectTimeouts[roomId][socket.id]);
-        }
-        disconnectTimeouts[roomId][socket.id] = setTimeout(() => {
-          delete disconnectTimeouts[roomId][socket.id];
-
-          const cleanupRoom = rooms[roomId];
-          if (!cleanupRoom) return;
-
-          const disconnectedUser = cleanupRoom.users[socket.id];
-          if (!disconnectedUser || disconnectedUser.isConnected !== false) return;
-
-          const wasHost = cleanupRoom.hostId === socket.id;
-          delete cleanupRoom.users[socket.id];
-
-          if (Object.keys(cleanupRoom.users).length === 0) {
-            delete rooms[roomId];
-            delete disconnectTimeouts[roomId];
-            console.log(`Room ${roomId} deleted as it is empty.`);
-            return;
-          }
-
-          if (wasHost) {
-            const newHostId = Object.keys(cleanupRoom.users)[0];
-            cleanupRoom.hostId = newHostId;
-            cleanupRoom.users[newHostId].isHost = true;
-            io.to(roomId).emit('host_changed', newHostId);
-          }
-        }, ROOM_GRACE_PERIOD_MS);
-        
-        // Notify connected clients that the user temporarily left
-        socket.to(roomId).emit('user_left', socket.id);
-      }
-    }
-  });
+  res.send('Watch Party Server is running with Enterprise Architecture');
 });
 
 const PORT = Number(process.env.PORT) || 3002;
-// Only start the server listening port if we are NOT running in a serverless environment (Vercel)
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
   server.listen(PORT, () => {
     console.log(`Watch Party Server running on port ${PORT}`);

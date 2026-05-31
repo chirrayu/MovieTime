@@ -92,12 +92,13 @@ export function SearchBar() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search movies, series..."
+            aria-label="Search movies and TV shows"
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
             className="flex-1 bg-transparent text-white placeholder:text-[#666] outline-none text-sm"
           />
           {query && (
-            <button type="button" onClick={() => { setQuery(''); setResults([]); setShowDropdown(false); }}>
+            <button type="button" aria-label="Clear search input" onClick={() => { setQuery(''); setResults([]); setShowDropdown(false); }}>
               <X className="w-4 h-4 text-[#9A9A9A] hover:text-white" />
             </button>
           )}
@@ -138,7 +139,8 @@ export function SearchBar() {
             </button>
           ))}
           <button
-            onClick={handleSubmit as any}
+            type="button"
+            onClick={handleSubmit}
             className="w-full p-3 text-center text-sm text-[#E50914] hover:bg-white/5 border-t border-white/5"
           >
             See all results for "{query}"
