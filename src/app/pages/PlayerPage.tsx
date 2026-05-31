@@ -393,6 +393,11 @@ export function PlayerPage({ type }: PlayerPageProps) {
       postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'hideControls', value: true } });
       postToEmbedPlayer({ key: 'player_command', action: 'hideControls', value: true });
       postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'setChromeless', value: true } });
+      postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'toggleControls', value: false } });
+      postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'hideUI', value: true } });
+      postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'setUIVisibility', value: false } });
+      postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'hideBottomControls', value: true } });
+      postToEmbedPlayer({ type: 'PLAYER_COMMAND', data: { action: 'hideTopBar', value: true } });
       return;
     }
 

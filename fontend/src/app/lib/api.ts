@@ -143,17 +143,38 @@ export function tmdbPoster(path: string | null, size: 'w200' | 'w342' | 'w500' |
 
 // ---- Embed URL Builders ----
 
+function buildEmbedSearchParams(options?: {
+  resumeAt?: number;
+  primaryColor?: string;
+  lang?: string;
+}) {
+  const params = new URLSearchParams();
+  if (options?.resumeAt) params.set('resumeAt', String(options.resumeAt));
+  if (options?.primaryColor) params.set('primaryColor', options.primaryColor);
+  if (options?.lang) params.set('lang', options.lang);
+  // Hide the embedded provider's built-in controls so we only use our custom UI
+  params.set('showTitle', 'false');
+  params.set('showLogo', 'false');
+  params.set('showBranding', 'false');
+  params.set('showControls', 'false');
+  params.set('controls', 'false');
+  params.set('controls', '0');
+  params.set('hideControls', 'true');
+  params.set('chromeless', 'true');
+  params.set('ui', 'false');
+  params.set('hideUI', 'true');
+  params.set('hideTopBar', 'true');
+  params.set('hideBottomBar', 'true');
+  return params;
+}
+
 export function getMovieEmbedUrl(id: string, options?: {
   resumeAt?: number;
   primaryColor?: string;
   lang?: string;
 }): string {
-  let url = `${VAPLAYER_BASE}/embed/movie/${id}`;
-  const params = new URLSearchParams();
-  if (options?.resumeAt) params.set('resumeAt', String(options.resumeAt));
-  if (options?.primaryColor) params.set('primaryColor', options.primaryColor);
-  if (options?.lang) params.set('lang', options.lang);
-  const qs = params.toString();
+  const url = `${VAPLAYER_BASE}/embed/movie/${id}`;
+  const qs = buildEmbedSearchParams(options).toString();
   return qs ? `${url}?${qs}` : url;
 }
 
@@ -162,12 +183,8 @@ export function getTVEmbedUrl(id: string, season: number, episode: number, optio
   primaryColor?: string;
   lang?: string;
 }): string {
-  let url = `${VAPLAYER_BASE}/embed/tv/${id}/${season}/${episode}`;
-  const params = new URLSearchParams();
-  if (options?.resumeAt) params.set('resumeAt', String(options.resumeAt));
-  if (options?.primaryColor) params.set('primaryColor', options.primaryColor);
-  if (options?.lang) params.set('lang', options.lang);
-  const qs = params.toString();
+  const url = `${VAPLAYER_BASE}/embed/tv/${id}/${season}/${episode}`;
+  const qs = buildEmbedSearchParams(options).toString();
   return qs ? `${url}?${qs}` : url;
 }
 
