@@ -3,9 +3,54 @@
 // ============================
 
 const VIDAPI_BASE = 'https://vidapi.ru';
-const VAPLAYER_BASE = 'https://vaplayer.ru';
-const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_BASES = [
+  'https://api.themoviedb.org/3',
+  'https://api.tmdb.org/3',
+];
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
+
+// ---- Multi-Source Embed Providers ----
+// Listed in priority order. Sources with neutral TLDs (.to, .me, .pro) work on
+// most networks; .ru sources are blocked in many regions/corporate networks.
+
+export interface EmbedSource {
+  id: string;
+  label: string;
+  getMovieUrl: (tmdbId: string) => string;
+  getTVUrl: (tmdbId: string, season: number, episode: number) => string;
+}
+
+export const EMBED_SOURCES: EmbedSource[] = [
+  {
+    id: 'vidlink',
+    label: 'VidLink',
+    getMovieUrl: (id) => `https://vidlink.pro/movie/${id}?primaryColor=E50914&autoplay=false`,
+    getTVUrl: (id, s, e) => `https://vidlink.pro/tv/${id}/${s}/${e}?primaryColor=E50914&autoplay=false`,
+  },
+];
+
+// Persist user's preferred source across sessions
+const SOURCE_PREF_KEY = 'movietime_embed_source';
+
+export function getPreferredSourceId(): string {
+  try {
+    return localStorage.getItem(SOURCE_PREF_KEY) || EMBED_SOURCES[0].id;
+  } catch {
+    return EMBED_SOURCES[0].id;
+  }
+}
+
+export function setPreferredSourceId(id: string): void {
+  try {
+    localStorage.setItem(SOURCE_PREF_KEY, id);
+  } catch {
+    // ignore
+  }
+}
+
+export function getSourceById(id: string): EmbedSource {
+  return EMBED_SOURCES.find(s => s.id === id) ?? EMBED_SOURCES[0];
+}
 
 const TMDB_API_KEY = '15d2ea6d0dc1d476efbca3eba2b9bbfb'; // Public TMDB API key for full search functionality
 
@@ -142,50 +187,26 @@ export function tmdbPoster(path: string | null, size: 'w200' | 'w342' | 'w500' |
 }
 
 // ---- Embed URL Builders ----
+// These delegate to the active embed source. Pass sourceId to override per-request.
 
-function buildEmbedSearchParams(options?: {
-  resumeAt?: number;
-  primaryColor?: string;
-  lang?: string;
-}) {
-  const params = new URLSearchParams();
-  if (options?.resumeAt) params.set('resumeAt', String(options.resumeAt));
-  if (options?.primaryColor) params.set('primaryColor', options.primaryColor);
-  if (options?.lang) params.set('lang', options.lang);
-  // Hide the embedded provider's built-in controls so we only use our custom UI
-  params.set('showTitle', 'false');
-  params.set('showLogo', 'false');
-  params.set('showBranding', 'false');
-  params.set('showControls', 'false');
-  params.set('controls', 'false');
-  params.set('controls', '0');
-  params.set('hideControls', 'true');
-  params.set('chromeless', 'true');
-  params.set('ui', 'false');
-  params.set('hideUI', 'true');
-  params.set('hideTopBar', 'true');
-  params.set('hideBottomBar', 'true');
-  return params;
+export function getMovieEmbedUrl(
+  id: string,
+  options?: { resumeAt?: number; primaryColor?: string; lang?: string },
+  sourceId?: string,
+): string {
+  const source = getSourceById(sourceId ?? getPreferredSourceId());
+  return source.getMovieUrl(id);
 }
 
-export function getMovieEmbedUrl(id: string, options?: {
-  resumeAt?: number;
-  primaryColor?: string;
-  lang?: string;
-}): string {
-  const url = `${VAPLAYER_BASE}/embed/movie/${id}`;
-  const qs = buildEmbedSearchParams(options).toString();
-  return qs ? `${url}?${qs}` : url;
-}
-
-export function getTVEmbedUrl(id: string, season: number, episode: number, options?: {
-  resumeAt?: number;
-  primaryColor?: string;
-  lang?: string;
-}): string {
-  const url = `${VAPLAYER_BASE}/embed/tv/${id}/${season}/${episode}`;
-  const qs = buildEmbedSearchParams(options).toString();
-  return qs ? `${url}?${qs}` : url;
+export function getTVEmbedUrl(
+  id: string,
+  season: number,
+  episode: number,
+  options?: { resumeAt?: number; primaryColor?: string; lang?: string },
+  sourceId?: string,
+): string {
+  const source = getSourceById(sourceId ?? getPreferredSourceId());
+  return source.getTVUrl(id, season, episode);
 }
 
 // ---- VidAPI Listing Endpoints ----
@@ -259,15 +280,56 @@ async function fetchVidLatestTVShows(page: number = 1): Promise<PaginatedRespons
 
 // ---- TMDB Search & Details ----
 
-async function tmdbFetch(path: string, params?: Record<string, string>) {
-  const url = new URL(`${TMDB_BASE}${path}`);
-  url.searchParams.set('api_key', TMDB_API_KEY);
-  if (params) {
-    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+const MIRROR_PREF_KEY = 'movietime_tmdb_mirror';
+
+function getOrderedMirrors(): string[] {
+  const defaultBases = [
+    'https://api.themoviedb.org/3',
+    'https://api.tmdb.org/3',
+  ];
+  try {
+    const preferred = localStorage.getItem(MIRROR_PREF_KEY);
+    if (preferred && defaultBases.includes(preferred)) {
+      return [preferred, ...defaultBases.filter(b => b !== preferred)];
+    }
+  } catch {
+    // Ignore
   }
-  const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`TMDB Error: ${res.status}`);
-  return res.json();
+  return defaultBases;
+}
+
+async function tmdbFetch(path: string, params?: Record<string, string>) {
+  let lastError: any = null;
+  const bases = getOrderedMirrors();
+  for (const base of bases) {
+    try {
+      const url = new URL(`${base}${path}`);
+      url.searchParams.set('api_key', TMDB_API_KEY);
+      if (params) {
+        Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+      }
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      
+      const res = await fetch(url.toString(), { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        try {
+          localStorage.setItem(MIRROR_PREF_KEY, base);
+        } catch {
+          // ignore
+        }
+        return await res.json();
+      }
+      lastError = new Error(`TMDB Error: ${res.status} on ${base}`);
+    } catch (err) {
+      lastError = err;
+      console.warn(`Failed to fetch TMDB data from ${base}, trying next mirror...`, err);
+    }
+  }
+  throw lastError || new Error('All TMDB API mirrors failed to load.');
 }
 
 export async function searchMulti(query: string, page: number = 1): Promise<{
@@ -367,11 +429,13 @@ export function mapTMDBToItem(tmdb: TMDBSearchResult): MovieItem | TVShowItem | 
   const rating = tmdb.vote_average ? tmdb.vote_average.toFixed(1) : '0';
   const poster_url = tmdbPoster(tmdb.poster_path);
   const genre = tmdb.genre_ids ? getGenreNames(tmdb.genre_ids, tmdb.media_type) : '';
+  
+  const extractedImdbId = (tmdb as any).imdb_id || (tmdb as any).external_ids?.imdb_id || '';
 
   if (isMovie) {
     return {
       tmdb_id: idStr,
-      imdb_id: '', // We don't have IMDB ID from search
+      imdb_id: extractedImdbId,
       title,
       year,
       poster_url,
@@ -379,12 +443,12 @@ export function mapTMDBToItem(tmdb: TMDBSearchResult): MovieItem | TVShowItem | 
       genre,
       popularity: String(tmdb.vote_average),
       type: 'movie',
-      embed_url: getMovieEmbedUrl(idStr)
+      embed_url: getMovieEmbedUrl(extractedImdbId || idStr)
     } as MovieItem;
   } else {
     return {
       tmdb_id: idStr,
-      imdb_id: '',
+      imdb_id: extractedImdbId, 
       title,
       year,
       poster_url,
@@ -396,4 +460,3 @@ export function mapTMDBToItem(tmdb: TMDBSearchResult): MovieItem | TVShowItem | 
     } as TVShowItem;
   }
 }
-
