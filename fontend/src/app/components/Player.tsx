@@ -15,6 +15,7 @@ export const Player = forwardRef<HTMLIFrameElement, PlayerProps>(
         src={embedUrl}
         className={className || "w-full h-full border-0 absolute inset-0 z-0"}
         allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+        allowFullScreen
         title={type === 'movie' ? 'Movie Player' : title || 'Video Player'}
       />
     );

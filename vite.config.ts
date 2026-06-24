@@ -17,6 +17,9 @@ function figmaAssetResolver() {
 }
 
 export default defineConfig({
+  // The actual frontend source lives in fontend/
+  root: path.resolve(__dirname, 'fontend'),
+
   plugins: [
     figmaAssetResolver(),
     // The React and Tailwind plugins are both required for Make, even if
@@ -26,9 +29,14 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      // Alias @ to the src directory
-      '@': path.resolve(__dirname, './src'),
+      // Alias @ to fontend/src
+      '@': path.resolve(__dirname, './fontend/src'),
     },
+  },
+
+  build: {
+    outDir: path.resolve(__dirname, 'dist'),
+    emptyOutDir: true,
   },
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.

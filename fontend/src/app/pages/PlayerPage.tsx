@@ -160,9 +160,9 @@ export function PlayerPage({ type }: PlayerPageProps) {
   const [adBlockEnabled, setAdBlockEnabled] = useState<boolean>(() => {
     try {
       const val = localStorage.getItem('movietime_adblock_enabled');
-      return val === null ? true : val === 'true';
+      return val === null ? false : val === 'true';
     } catch {
-      return true;
+      return false;
     }
   });
 
@@ -298,26 +298,29 @@ export function PlayerPage({ type }: PlayerPageProps) {
   }, [localIsPlaying, currentDuration, roomId]);
 
   // ----------------------------------------------------
-  // Embed URL setup
+  // Embed URL setup — with resume playback via vaplayer.ru resumeAt param
   // ----------------------------------------------------
 
   useEffect(() => {
     if (!id) return;
 
+    // Load saved progress for resume playback
+    const savedProgress = getWatchProgress(id, seasonNum, episodeNum);
+    const resumeAt = savedProgress && savedProgress.progress > 30 ? savedProgress.progress : undefined;
+
+    const embedOptions = {
+      primaryColor: prefs.playerColor || '#E50914',
+      lang: currentLang,
+      autoplay: prefs.autoPlay,
+      resumeAt,
+    };
+
     if (type === 'movie') {
-      setEmbedUrl(getMovieEmbedUrl(id, {
-        resumeAt: undefined,
-        primaryColor: prefs.playerColor,
-        lang: currentLang,
-      }));
+      setEmbedUrl(getMovieEmbedUrl(id, embedOptions));
     } else if (seasonNum && episodeNum) {
-      setEmbedUrl(getTVEmbedUrl(id, seasonNum, episodeNum, {
-        resumeAt: undefined,
-        primaryColor: prefs.playerColor,
-        lang: currentLang,
-      }));
+      setEmbedUrl(getTVEmbedUrl(id, seasonNum, episodeNum, embedOptions));
     }
-  }, [id, type, seasonNum, episodeNum, currentLang, prefs.playerColor]);
+  }, [id, type, seasonNum, episodeNum, currentLang, prefs.playerColor, prefs.autoPlay]);
 
   // ----------------------------------------------------
   // Sync URL Room parameter
@@ -826,7 +829,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
 
     setConnStatus('connecting');
 
-    const newSocket = io(BACKEND_URL, {
+    const newSocket = io(`${BACKEND_URL}/watch-party`, {
       transports: ['polling', 'websocket'],
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
@@ -1349,20 +1352,26 @@ export function PlayerPage({ type }: PlayerPageProps) {
         onMouseMove={resetControlsTimeout}
         onClick={resetControlsTimeout}
       >
-        {/* Video Player Iframe — native embed UI cropped/hidden; custom controls below */}
+        {/* Video Player Iframe */}
         <div className="watch-player-embed absolute inset-0 z-0" onMouseMove={resetControlsTimeout} onClick={resetControlsTimeout}>
           <iframe
             ref={iframeRef}
             src={embedUrl}
             className="border-0 w-full h-full absolute inset-0"
-            sandbox={adBlockEnabled ? "allow-scripts allow-forms allow-presentation allow-pointer-lock" : undefined}
+            sandbox={
+              adBlockEnabled
+                // Ad-block: drop allow-same-origin to restrict ad network requests
+                ? "allow-scripts allow-forms allow-presentation allow-pointer-lock allow-popups"
+                // Normal: full playback permissions — but NO allow-top-navigation,
+                // which blocks the embed from redirecting the parent page to its own site
+                : "allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock allow-popups"
+            }
             allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+            allowFullScreen
             title={type === 'movie' ? 'Movie Player' : `S${seasonNum}E${episodeNum}`}
             onMouseMove={resetControlsTimeout}
             onClick={resetControlsTimeout}
           />
-
-
         </div>
 
         {/* Top Controls Bar */}
@@ -1490,11 +1499,10 @@ export function PlayerPage({ type }: PlayerPageProps) {
               {/* Ad Blocker Switch */}
               <button
                 onClick={toggleAdBlock}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border transition-all ${
-                  adBlockEnabled 
-                    ? 'bg-[#E50914]/20 border-[#E50914]/40 text-[#E50914] hover:bg-[#E50914]/30' 
-                    : 'bg-white/10 border-white/10 text-[#9A9A9A] hover:bg-white/20 hover:text-white'
-                }`}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border transition-all ${adBlockEnabled
+                  ? 'bg-[#E50914]/20 border-[#E50914]/40 text-[#E50914] hover:bg-[#E50914]/30'
+                  : 'bg-white/10 border-white/10 text-[#9A9A9A] hover:bg-white/20 hover:text-white'
+                  }`}
                 title={adBlockEnabled ? "Disable Ad-Blocker (use if video fails to load)" : "Enable Ad-Blocker"}
               >
                 <Shield className={`w-4 h-4 ${adBlockEnabled ? 'fill-[#E50914]/20' : ''}`} />
@@ -1539,51 +1547,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
           </div>
         </div>
 
-        {/* Bottom Progress Bar */}
-        {currentDuration > 0 && (
-          <div
-            className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent
-                       transition-all duration-500 z-10 ${showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}
-          >
-            <div className="px-4 pb-4 pt-8">
-              <div className="flex items-center gap-3 mb-2">
-                <button
-                  onClick={togglePlayPause}
-                  disabled={!!roomId && !canHostControl}
-                  className="p-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed rounded-full text-white transition-colors shrink-0"
-                  title={
-                    roomId && !isHost
-                      ? 'Only the host controls playback'
-                      : roomId && !partyReady
-                        ? 'Join Watch Party first'
-                        : isPlaying
-                          ? 'Pause'
-                          : 'Play'
-                  }
-                  aria-label={isPlaying ? 'Pause' : 'Play'}
-                >
-                  {isPlaying ? <Pause className="w-5 h-5" fill="currentColor" /> : <Play className="w-5 h-5" fill="currentColor" />}
-                </button>
-                {/* Progress bar */}
-                <div
-                  onClick={handleProgressBarClick}
-                  className={`flex-1 h-1.5 bg-white/20 rounded-full overflow-hidden group relative ${canHostControl || !roomId ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
-                >
-                  <div
-                    className="h-full bg-[#E50914] rounded-full relative group-hover:h-1.5 transition-all"
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Time */}
-              <div className="flex items-center justify-between text-xs text-[#9A9A9A] pl-11">
-                <span>{formatTime(currentProgress)}</span>
-                <span>{formatTime(currentDuration)}</span>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Bottom Progress Bar — hidden; vaplayer.ru has its own native controls */}
       </div>
 
       {/* 2. Realtime Watch Party Sidebar */}
@@ -1595,7 +1559,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className={`w-2.5 h-2.5 rounded-full ${connStatus === 'connected' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' :
-                    connStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'
+                  connStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'
                   }`} />
                 <span className="text-white text-sm font-semibold tracking-wide">WATCH PARTY</span>
               </div>
@@ -1659,7 +1623,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
               className={`flex-1 py-3 text-center border-b-2 font-medium transition-all ${activeTab === 'users' ? 'border-[#E50914] text-white bg-white/5' : 'border-transparent text-[#9A9A9A] hover:text-white'
                 }`}
             >
-              People ({activeUserCount})
+              People {activeUserCount > 0 ? `(${activeUserCount})` : ''}
             </button>
           </div>
 
@@ -1685,8 +1649,8 @@ export function PlayerPage({ type }: PlayerPageProps) {
                         <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
                       <div className={`p-2.5 rounded-2xl ${msg.userId === socket?.id
-                          ? 'bg-[#E50914] text-white rounded-tr-none shadow-[0_2px_8px_rgba(229,9,20,0.25)]'
-                          : 'bg-white/10 text-white/90 rounded-tl-none border border-white/5'
+                        ? 'bg-[#E50914] text-white rounded-tr-none shadow-[0_2px_8px_rgba(229,9,20,0.25)]'
+                        : 'bg-white/10 text-white/90 rounded-tl-none border border-white/5'
                         }`}>
                         {msg.text}
                       </div>
