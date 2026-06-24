@@ -2,30 +2,59 @@
 // VidAPI & TMDB API Integration
 // ============================
 
+// VidAPI — listing data (JSON catalogs)
 const VIDAPI_BASE = 'https://vidapi.ru';
-const TMDB_BASES = [
-  'https://api.themoviedb.org/3',
-  'https://api.tmdb.org/3',
-];
+// VidAPI — embed player
+const VAPLAYER_BASE = 'https://vaplayer.ru';
+
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 
 // ---- Multi-Source Embed Providers ----
-// Listed in priority order. Sources with neutral TLDs (.to, .me, .pro) work on
-// most networks; .ru sources are blocked in many regions/corporate networks.
 
 export interface EmbedSource {
   id: string;
   label: string;
-  getMovieUrl: (tmdbId: string) => string;
-  getTVUrl: (tmdbId: string, season: number, episode: number) => string;
+  getMovieUrl: (id: string, options?: EmbedOptions) => string;
+  getTVUrl: (id: string, season: number, episode: number, options?: EmbedOptions) => string;
+}
+
+export interface EmbedOptions {
+  resumeAt?: number;
+  primaryColor?: string;
+  lang?: string;
+  autoplay?: boolean;
+  title?: string;
+  poster?: string;
+}
+
+function buildVaPlayerMovieUrl(id: string, opts?: EmbedOptions): string {
+  const url = new URL(`${VAPLAYER_BASE}/embed/movie/${id}`);
+  url.searchParams.set('primaryColor', (opts?.primaryColor || '#E50914').replace('#', ''));
+  if (opts?.lang) url.searchParams.set('lang', opts.lang);
+  if (typeof opts?.autoplay === 'boolean') url.searchParams.set('autoplay', opts.autoplay ? '1' : '0');
+  if (opts?.resumeAt != null && opts.resumeAt > 0) url.searchParams.set('resumeAt', String(Math.floor(opts.resumeAt)));
+  if (opts?.title) url.searchParams.set('title', opts.title);
+  if (opts?.poster) url.searchParams.set('poster', opts.poster);
+  return url.toString();
+}
+
+function buildVaPlayerTVUrl(id: string, season: number, episode: number, opts?: EmbedOptions): string {
+  const url = new URL(`${VAPLAYER_BASE}/embed/tv/${id}/${season}/${episode}`);
+  url.searchParams.set('primaryColor', (opts?.primaryColor || '#E50914').replace('#', ''));
+  if (opts?.lang) url.searchParams.set('lang', opts.lang);
+  if (typeof opts?.autoplay === 'boolean') url.searchParams.set('autoplay', opts.autoplay ? '1' : '0');
+  if (opts?.resumeAt != null && opts.resumeAt > 0) url.searchParams.set('resumeAt', String(Math.floor(opts.resumeAt)));
+  if (opts?.title) url.searchParams.set('title', opts.title);
+  if (opts?.poster) url.searchParams.set('poster', opts.poster);
+  return url.toString();
 }
 
 export const EMBED_SOURCES: EmbedSource[] = [
   {
-    id: 'vidlink',
-    label: 'VidLink',
-    getMovieUrl: (id) => `https://vidlink.pro/movie/${id}?primaryColor=E50914&autoplay=false`,
-    getTVUrl: (id, s, e) => `https://vidlink.pro/tv/${id}/${s}/${e}?primaryColor=E50914&autoplay=false`,
+    id: 'vidapi',
+    label: 'VidAPI',
+    getMovieUrl: (id, opts) => buildVaPlayerMovieUrl(id, opts),
+    getTVUrl: (id, s, e, opts) => buildVaPlayerTVUrl(id, s, e, opts),
   },
 ];
 
@@ -191,70 +220,72 @@ export function tmdbPoster(path: string | null, size: 'w200' | 'w342' | 'w500' |
 
 export function getMovieEmbedUrl(
   id: string,
-  options?: { resumeAt?: number; primaryColor?: string; lang?: string },
+  options?: EmbedOptions,
   sourceId?: string,
 ): string {
   const source = getSourceById(sourceId ?? getPreferredSourceId());
-  return source.getMovieUrl(id);
+  return source.getMovieUrl(id, { primaryColor: '#E50914', ...options });
 }
 
 export function getTVEmbedUrl(
   id: string,
   season: number,
   episode: number,
-  options?: { resumeAt?: number; primaryColor?: string; lang?: string },
+  options?: EmbedOptions,
   sourceId?: string,
 ): string {
   const source = getSourceById(sourceId ?? getPreferredSourceId());
-  return source.getTVUrl(id, season, episode);
+  return source.getTVUrl(id, season, episode, { primaryColor: '#E50914', ...options });
 }
 
 // ---- VidAPI Listing Endpoints ----
+// VidAPI listings are the PRIMARY data source — they return ready-made vaplayer.ru embed URLs.
+// TMDB is used as an enrichment fallback for search/details only.
 
 export async function fetchLatestMovies(page: number = 1): Promise<PaginatedResponse<MovieItem>> {
-  if (!TMDB_API_KEY) {
-    return fetchVidLatestMovies(page);
-  }
-
   try {
-    // Use TMDB Popular Movies for a better global catalog
-    const data = await getPopular('movie', page);
-    // mapTMDBToItem requires a TMDBSearchResult with media_type, so we force it for popular results
-    const items = data.results.map(r => mapTMDBToItem({ ...r, media_type: 'movie' })).filter(Boolean) as MovieItem[];
-
-    return {
-      page,
-      per_page: 20,
-      total: data.total_results || 10000,
-      total_pages: data.total_pages,
-      items,
-    };
+    // VidAPI listing is primary — embed_url already points to vaplayer.ru
+    const data = await fetchVidLatestMovies(page);
+    // Re-stamp embed URLs through our builder so options (color, etc.) are applied
+    data.items = data.items.map(m => ({
+      ...m,
+      embed_url: getMovieEmbedUrl(m.imdb_id || m.tmdb_id),
+    }));
+    return data;
   } catch (err) {
-    console.warn('TMDB popular movies failed, falling back to VidAPI:', err);
-    return fetchVidLatestMovies(page);
+    console.warn('VidAPI movie listing failed, trying TMDB popular:', err);
+    if (!TMDB_API_KEY) throw err;
+    try {
+      const data = await getPopular('movie', page);
+      const items = data.results.map(r => mapTMDBToItem({ ...r, media_type: 'movie' })).filter(Boolean) as MovieItem[];
+      return { page, per_page: 20, total: data.total_results || 10000, total_pages: data.total_pages, items };
+    } catch (err2) {
+      console.error('Both VidAPI and TMDB failed for movies:', err2);
+      return { page, per_page: 20, total: 0, total_pages: 0, items: [] };
+    }
   }
 }
 
 export async function fetchLatestTVShows(page: number = 1): Promise<PaginatedResponse<TVShowItem>> {
-  if (!TMDB_API_KEY) {
-    return fetchVidLatestTVShows(page);
-  }
-
   try {
-    // Use TMDB Popular TV Shows
-    const data = await getPopular('tv', page);
-    const items = data.results.map(r => mapTMDBToItem({ ...r, media_type: 'tv' })).filter(Boolean) as TVShowItem[];
-
-    return {
-      page,
-      per_page: 20,
-      total: data.total_results || 10000,
-      total_pages: data.total_pages,
-      items,
-    };
+    const data = await fetchVidLatestTVShows(page);
+    // Re-stamp with our TV embed URL builder (season 1, ep 1 default)
+    data.items = data.items.map(s => ({
+      ...s,
+      embed_url: getTVEmbedUrl(s.tmdb_id || s.imdb_id, 1, 1),
+    }));
+    return data;
   } catch (err) {
-    console.warn('TMDB popular TV shows failed, falling back to VidAPI:', err);
-    return fetchVidLatestTVShows(page);
+    console.warn('VidAPI TV listing failed, trying TMDB popular:', err);
+    if (!TMDB_API_KEY) throw err;
+    try {
+      const data = await getPopular('tv', page);
+      const items = data.results.map(r => mapTMDBToItem({ ...r, media_type: 'tv' })).filter(Boolean) as TVShowItem[];
+      return { page, per_page: 20, total: data.total_results || 10000, total_pages: data.total_pages, items };
+    } catch (err2) {
+      console.error('Both VidAPI and TMDB failed for TV shows:', err2);
+      return { page, per_page: 20, total: 0, total_pages: 0, items: [] };
+    }
   }
 }
 
@@ -433,6 +464,8 @@ export function mapTMDBToItem(tmdb: TMDBSearchResult): MovieItem | TVShowItem | 
   const extractedImdbId = (tmdb as any).imdb_id || (tmdb as any).external_ids?.imdb_id || '';
 
   if (isMovie) {
+    // Prefer IMDB ID for vaplayer.ru (tt prefix), fall back to TMDB numeric ID
+    const embedId = extractedImdbId || idStr;
     return {
       tmdb_id: idStr,
       imdb_id: extractedImdbId,
@@ -443,12 +476,13 @@ export function mapTMDBToItem(tmdb: TMDBSearchResult): MovieItem | TVShowItem | 
       genre,
       popularity: String(tmdb.vote_average),
       type: 'movie',
-      embed_url: getMovieEmbedUrl(extractedImdbId || idStr)
+      embed_url: getMovieEmbedUrl(embedId),
     } as MovieItem;
   } else {
+    // TV shows: use TMDB ID for episode routing
     return {
       tmdb_id: idStr,
-      imdb_id: extractedImdbId, 
+      imdb_id: extractedImdbId,
       title,
       year,
       poster_url,
@@ -456,7 +490,7 @@ export function mapTMDBToItem(tmdb: TMDBSearchResult): MovieItem | TVShowItem | 
       genre,
       popularity: String(tmdb.vote_average),
       type: 'tv',
-      embed_url: getTVEmbedUrl(idStr, 1, 1)
+      embed_url: getTVEmbedUrl(idStr, 1, 1),
     } as TVShowItem;
   }
 }

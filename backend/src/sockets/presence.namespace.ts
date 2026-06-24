@@ -48,7 +48,9 @@ export function setupPresenceNamespace(io: Server) {
       socket.join(roomId);
 
       if (updatedRoom) {
-        socket.emit('room_state_update', updatedRoom);
+        // Send full room state to everyone so all clients have the latest users list
+        presenceNs.to(roomId).emit('room_state_update', updatedRoom);
+        // Also notify others a new user joined (for the toast notification)
         socket.to(roomId).emit('user_joined', newUser);
       }
     });

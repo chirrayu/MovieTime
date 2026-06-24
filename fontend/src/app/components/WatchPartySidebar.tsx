@@ -131,7 +131,7 @@ export function WatchPartySidebar(props: WatchPartySidebarProps) {
             activeTab === 'users' ? 'border-[#E50914] text-white bg-white/5' : 'border-transparent text-[#9A9A9A] hover:text-white'
           }`}
         >
-          People ({activeUserCount})
+          People {activeUserCount > 0 ? `(${activeUserCount})` : ''}
         </button>
       </div>
 

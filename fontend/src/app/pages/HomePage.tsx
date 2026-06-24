@@ -162,11 +162,24 @@ export function HomePage() {
       {/* Lazy‑loaded Player */}
       {showPlayer && selectedMovie && (
         <Suspense fallback={<div className="fixed inset-0 flex items-center justify-center bg-black text-white">Loading player…</div>}>
-          <LazyPlayer
-            embedUrl={selectedMovie.embed_url}
-            type={selectedMovie.type}
-            title={selectedMovie.title}
-          />
+          <div className="fixed inset-0 z-50 bg-black flex flex-col">
+            <div className="flex items-center justify-between px-4 py-2 bg-black/80 backdrop-blur-md">
+              <span className="text-white text-sm font-semibold">{selectedMovie.title}</span>
+              <button
+                onClick={() => { setShowPlayer(false); setSelectedMovie(null); }}
+                className="text-white/70 hover:text-white text-xs px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+              >
+                ✕ Close
+              </button>
+            </div>
+            <div className="relative flex-1">
+              <LazyPlayer
+                embedUrl={selectedMovie.embed_url}
+                type={selectedMovie.type}
+                title={selectedMovie.title}
+              />
+            </div>
+          </div>
         </Suspense>
       )}
     </div>
