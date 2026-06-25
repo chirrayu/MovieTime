@@ -1,15 +1,10 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { motion } from 'motion/react';
+import { MovieCard } from '../components/MovieCard';
 import { MoviePreviewModal } from '../components/MoviePreviewModal';
-import {
-  getHistory,
-  getAllWatchProgress
-} from '../lib/storage';
-import {
-  getPopular,
-  getTrending,
-  getTopRated,
-  mapTMDBToItem
-} from '../lib/api';
+import { ChevronLeft, ChevronRight, Sparkles, Play, Info, Plus, RefreshCw } from 'lucide-react';
+import { getHistory, getAllWatchProgress } from '../lib/storage';
+import { getPopular, getTrending, getTopRated, mapTMDBToItem } from '../lib/api';
 import type { MovieItem, TVShowItem } from '../lib/api';
 import {
   loadUserProfile,
@@ -19,262 +14,132 @@ import {
   type RecommenderContext,
   type ScoredRecommendation,
 } from '../lib/recommender';
-import { Sparkles, Play, Info, RefreshCw, ChevronRight, Star, TrendingUp, Compass } from 'lucide-react';
 
 const LazyPlayer = lazy(() => import('../components/Player'));
 
-const FILTERS = ['For You', 'New Discoveries', 'Trending', 'Highly Rated'];
+// ── Scrollable row ────────────────────────────────────────────────────────────
 
-// ── Small helpers ────────────────────────────────────────────────────────────
-
-function MatchBadge({ score }: { score: number }) {
-  const pct = Math.round(score);
-  const color =
-    pct >= 75 ? '#E50914' :
-      pct >= 55 ? '#ff6b6b' : '#a3a3a3';
-  return (
-    <span style={{ color, fontSize: 11, fontWeight: 700, letterSpacing: '0.02em' }}>
-      {pct}% match
-    </span>
-  );
-}
-
-function CategoryPill({ label }: { label: string }) {
-  const colors: Record<string, string> = {
-    'Safe Pick': '#E50914',
-    'Adjacent Pick': '#E50914',
-    'Discovery Pick': '#E50914',
-  };
-  return (
-    <span style={{
-      fontSize: 10,
-      fontWeight: 700,
-      letterSpacing: '0.05em',
-      textTransform: 'uppercase',
-      color: colors[label] ?? '#a3a3a3',
-      background: (colors[label] ?? '#a3a3a3') + '1a',
-      border: `1px solid ${colors[label] ?? '#a3a3a3'}33`,
-      borderRadius: 4,
-      padding: '2px 7px',
-    }}>
-      {label}
-    </span>
-  );
-}
-
-// ── Poster card (row) ────────────────────────────────────────────────────────
-
-function PosterCard({ rec, onClick }: { rec: ScoredRecommendation; onClick: () => void }) {
-  const [hovered, setHovered] = useState(false);
-  const src = rec.personalizedPoster || rec.item.poster_url || '';
-  const genres = rec.item.genre?.split(',').map(g => g.trim()).filter(Boolean) ?? [];
-
-  return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        flexShrink: 0,
-        width: 160,
-        cursor: 'pointer',
-        transition: 'transform 0.2s ease',
-        transform: hovered ? 'translateY(-6px)' : 'translateY(0)',
-      }}
-    >
-      <div style={{
-        position: 'relative',
-        width: '100%',
-        aspectRatio: '2/3',
-        borderRadius: 12,
-        overflow: 'hidden',
-        background: '#111111',
-        boxShadow: hovered ? '0 16px 40px rgba(0,0,0,0.7)' : '0 4px 16px rgba(0,0,0,0.4)',
-        transition: 'box-shadow 0.2s ease',
-      }}>
-        <img
-          src={src}
-          alt={rec.item.title}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-          onError={e => { (e.target as HTMLImageElement).style.opacity = '0'; }}
-        />
-        {/* Hover overlay */}
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: 'linear-gradient(to top, rgba(0,0,0,0.92) 40%, rgba(0,0,0,0.3) 100%)',
-          opacity: hovered ? 1 : 0,
-          transition: 'opacity 0.2s ease',
-          display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
-          padding: 12, gap: 6,
-        }}>
-          <MatchBadge score={rec.score} />
-          {genres[0] && (
-            <span style={{ fontSize: 11, color: '#a3a3a3' }}>{genres[0]}</span>
-          )}
-          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-            <button
-              onClick={e => { e.stopPropagation(); onClick(); }}
-              style={{
-                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                background: 'white', color: 'black', border: 'none', borderRadius: 6,
-                padding: '6px 0', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              }}
-            >
-              <Play style={{ width: 12, height: 12 }} fill="black" /> Play
-            </button>
-          </div>
-        </div>
-
-        {/* Category badge top-right */}
-        <div style={{ position: 'absolute', top: 8, right: 8 }}>
-          {rec.category === 'Discovery Pick' && (
-            <span style={{
-              background: '#f9731620', border: '1px solid #f9731640',
-              color: '#f97316', fontSize: 9, fontWeight: 700,
-              borderRadius: 4, padding: '2px 5px', letterSpacing: '0.05em',
-              textTransform: 'uppercase',
-            }}>New</span>
-          )}
-        </div>
-      </div>
-      <div style={{ marginTop: 10, paddingLeft: 2 }}>
-        <p style={{
-          fontSize: 13, fontWeight: 600, color: hovered ? '#fff' : '#e2e8f0',
-          margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          transition: 'color 0.2s',
-        }}>{rec.item.title}</p>
-        <p style={{ fontSize: 11, color: '#64748b', margin: '3px 0 0', display: 'flex', gap: 6 }}>
-          <span>{rec.item.year}</span>
-          {rec.item.rating && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Star style={{ width: 10, height: 10, color: '#facc15' }} fill="#facc15" />
-              {parseFloat(rec.item.rating).toFixed(1)}
-            </span>
-          )}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// ── Horizontal row section ───────────────────────────────────────────────────
-
-function RowSection({
-  title, subtitle, icon, accentColor, recs, onCardClick
+function RecommendationRow({
+  title,
+  subtitle,
+  recs,
+  onCardClick,
 }: {
   title: string;
-  subtitle: string;
-  icon: React.ReactNode;
-  accentColor: string;
+  subtitle?: string;
   recs: ScoredRecommendation[];
-  onCardClick: (item: MovieItem | TVShowItem) => void;
+  onCardClick: (item: any) => void;
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [showLeft, setShowLeft] = useState(false);
+  const [showRight, setShowRight] = useState(true);
+
+  const updateArrows = () => {
+    if (!scrollRef.current) return;
+    const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
+    setShowLeft(scrollLeft > 0);
+    setShowRight(scrollLeft < scrollWidth - clientWidth - 10);
+  };
+
+  const scroll = (dir: 'left' | 'right') => {
+    scrollRef.current?.scrollBy({ left: dir === 'left' ? -600 : 600, behavior: 'smooth' });
+    setTimeout(updateArrows, 400);
+  };
+
   if (recs.length === 0) return null;
-  return (
-    <section>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <h2 style={{
-            margin: 0, fontSize: 20, fontWeight: 700, color: '#ffffff',
-            display: 'flex', alignItems: 'center', gap: 8,
-          }}>
-            <span style={{ color: accentColor }}>{icon}</span>
-            {title}
-          </h2>
-          <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>{subtitle}</p>
-        </div>
-        <button style={{
-          background: 'none', border: 'none', color: '#64748b', cursor: 'pointer',
-          fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 2,
-          padding: 0,
-        }}>
-          See all <ChevronRight style={{ width: 14, height: 14 }} />
-        </button>
-      </div>
-      <div style={{ display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 12 }}>
-        {recs.map(rec => (
-          <PosterCard
-            key={rec.item.tmdb_id || rec.item.imdb_id}
-            rec={rec}
-            onClick={() => onCardClick(rec.item)}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-// ── Grid card (For You grid) ─────────────────────────────────────────────────
-
-function GridCard({ rec, onClick }: { rec: ScoredRecommendation; onClick: () => void }) {
-  const [hovered, setHovered] = useState(false);
-  const src = rec.personalizedPoster || rec.item.poster_url || '';
 
   return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{ cursor: 'pointer', transition: 'transform 0.2s', transform: hovered ? 'translateY(-4px)' : 'none' }}
-    >
-      <div style={{
-        position: 'relative', aspectRatio: '2/3', borderRadius: 10, overflow: 'hidden',
-        background: '#111111',
-        boxShadow: hovered ? '0 12px 32px rgba(0,0,0,0.6)' : '0 2px 8px rgba(0,0,0,0.3)',
-        transition: 'box-shadow 0.2s',
-      }}>
-        <img src={src} alt={rec.item.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: 'linear-gradient(to top, rgba(0,0,0,0.85) 35%, transparent 70%)',
-          opacity: hovered ? 1 : 0, transition: 'opacity 0.2s',
-          display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: 10, gap: 5,
-        }}>
-          <MatchBadge score={rec.score} />
-          <CategoryPill label={rec.category} />
-          {rec.reasons[0] && (
-            <p style={{
-              margin: 0, fontSize: 10, color: '#cbd5e1', lineHeight: 1.4,
-              overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical'
-            }}>
-              {rec.reasons[0]}
-            </p>
-          )}
+    <div className="space-y-4 group/row">
+      <div className="flex items-center justify-between px-6">
+        <div className="space-y-0.5">
+          <h2 className="text-xl text-white font-medium">{title}</h2>
+          {subtitle && <p className="text-xs text-[#666]">{subtitle}</p>}
+        </div>
+        <span className="text-xs text-[#666] uppercase tracking-wider">{recs.length} titles</span>
+      </div>
+
+      <div className="relative">
+        {showLeft && (
+          <button
+            onClick={() => scroll('left')}
+            className="absolute left-0 top-0 bottom-8 z-10 w-14 bg-gradient-to-r from-[#070707] to-transparent
+                       flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity duration-300"
+          >
+            <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/10 hover:bg-white/20 transition-colors">
+              <ChevronLeft className="w-5 h-5 text-white" />
+            </div>
+          </button>
+        )}
+
+        {showRight && (
+          <button
+            onClick={() => scroll('right')}
+            className="absolute right-0 top-0 bottom-8 z-10 w-14 bg-gradient-to-l from-[#070707] to-transparent
+                       flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity duration-300"
+          >
+            <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/10 hover:bg-white/20 transition-colors">
+              <ChevronRight className="w-5 h-5 text-white" />
+            </div>
+          </button>
+        )}
+
+        <div
+          ref={scrollRef}
+          onScroll={updateArrows}
+          className="flex gap-4 overflow-x-auto px-6 pb-4"
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
+          {recs.map((rec, idx) => (
+            <div key={`${rec.item.tmdb_id}-${idx}`} className="flex-none w-44">
+              <MovieCard
+                tmdb_id={rec.item.tmdb_id}
+                imdb_id={rec.item.imdb_id}
+                title={rec.item.title}
+                year={rec.item.year}
+                rating={rec.item.rating}
+                poster_url={rec.item.poster_url}
+                genre={rec.item.genre}
+                type={rec.item.type}
+                personalizedPoster={rec.personalizedPoster}
+                onCardClick={onCardClick}
+              />
+            </div>
+          ))}
         </div>
       </div>
-      <p style={{
-        margin: '8px 0 2px', fontSize: 12, fontWeight: 600,
-        color: hovered ? '#f1f5f9' : '#a3a3a3', transition: 'color 0.2s',
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-      }}>{rec.item.title}</p>
-      <p style={{ margin: 0, fontSize: 11, color: '#475569' }}>
-        {rec.item.genre?.split(',')[0]} · {rec.item.year}
-      </p>
     </div>
   );
 }
 
-// ── Main page ────────────────────────────────────────────────────────────────
+// ── Skeleton row ──────────────────────────────────────────────────────────────
+
+function SkeletonRow({ title }: { title: string }) {
+  return (
+    <div className="space-y-4">
+      <h2 className="text-xl text-white px-6 font-medium">{title}</h2>
+      <div className="flex gap-4 px-6 overflow-hidden">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="flex-none w-44">
+            <div className="aspect-[2/3] rounded-xl bg-white/5 animate-pulse" />
+            <div className="mt-2 h-4 bg-white/5 rounded animate-pulse w-3/4" />
+            <div className="mt-1 h-3 bg-white/5 rounded animate-pulse w-1/2" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Filters ───────────────────────────────────────────────────────────────────
+
+const FILTERS = ['For You', 'New Discoveries', 'Trending', 'Highly Rated'] as const;
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export function RecommendationsPage() {
-  const [profile] = useState<UserProfile>(loadUserProfile());
-  const [context] = useState<RecommenderContext>(() => {
-    const hour = new Date().getHours();
-    let timeOfDay: RecommenderContext['timeOfDay'] = 'night';
-    if (hour > 5 && hour < 11) timeOfDay = 'morning';
-    else if (hour >= 11 && hour < 14) timeOfDay = 'lunch';
-    else if (hour >= 14 && hour < 18) timeOfDay = 'afternoon';
-    return {
-      deviceType: window.innerWidth < 768 ? 'mobile' : 'desktop',
-      timeOfDay,
-      dayOfWeek: new Date().getDay(),
-      weather: 'sunny',
-    };
-  });
-
   const [recommendations, setRecommendations] = useState<ScoredRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeFilter, setActiveFilter] = useState('For You');
+  const [activeFilter, setActiveFilter] = useState<string>('For You');
   const [selectedMovie, setSelectedMovie] = useState<any | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showPlayer, setShowPlayer] = useState(false);
@@ -283,6 +148,21 @@ export function RecommendationsPage() {
     async function init() {
       setLoading(true);
       try {
+        const hour = new Date().getHours();
+        let timeOfDay: RecommenderContext['timeOfDay'] = 'night';
+        if (hour > 5 && hour < 11) timeOfDay = 'morning';
+        else if (hour >= 11 && hour < 14) timeOfDay = 'lunch';
+        else if (hour >= 14 && hour < 18) timeOfDay = 'afternoon';
+
+        const context: RecommenderContext = {
+          deviceType: window.innerWidth < 768 ? 'mobile' : 'desktop',
+          timeOfDay,
+          dayOfWeek: new Date().getDay(),
+          weather: 'sunny',
+        };
+
+        const profile: UserProfile = loadUserProfile();
+
         const [popMovies, popTV, trending, topMovie, topTV] = await Promise.all([
           getPopular('movie', 1).catch(() => ({ results: [] })),
           getPopular('tv', 1).catch(() => ({ results: [] })),
@@ -350,193 +230,244 @@ export function RecommendationsPage() {
     closeModal(true);
   };
 
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '80vh' }}>
-        <RefreshCw style={{ width: 36, height: 36, color: '#E50914', animation: 'spin 1s linear infinite' }} />
-        <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
-      </div>
-    );
-  }
+  // ── Derived sections ──────────────────────────────────────────────────────
 
-  const hero = recommendations[0];
+  const hero = recommendations[0] ?? null;
+
+  const discoverRecs = recommendations
+    .filter(r => r.category === 'Discovery Pick' || r.probabilities.novelty > 0.7)
+    .slice(0, 15);
+
   const history = getHistory();
+  const becauseTitle = history.length > 0
+    ? `Because you watched ${history[0].title}`
+    : 'Picked for your taste';
+  const becauseWatched = recommendations.filter(r => r !== hero).slice(2, 17);
 
-  // Sections
-  const discoverRecs = recommendations.filter(r => r.category === 'Discovery Pick' || r.probabilities.novelty > 0.7).slice(0, 12);
-  const historyTitle = history.length > 0 ? `Because you watched ${history[0].title}` : 'Picked for your taste';
-  const becauseWatched = recommendations.filter(r => r !== hero).slice(2, 14);
-  const topRated = [...recommendations].sort((a, b) => parseFloat(b.item.rating) - parseFloat(a.item.rating)).slice(0, 12);
+  const topRated = [...recommendations]
+    .sort((a, b) => parseFloat(b.item.rating) - parseFloat(a.item.rating))
+    .slice(0, 15);
 
   let gridRecs = [...recommendations];
   if (activeFilter === 'New Discoveries') gridRecs = gridRecs.filter(r => r.probabilities.novelty > 0.6);
   if (activeFilter === 'Trending') gridRecs = gridRecs.sort((a, b) => b.probabilities.watch - a.probabilities.watch);
   if (activeFilter === 'Highly Rated') gridRecs = gridRecs.sort((a, b) => parseFloat(b.item.rating) - parseFloat(a.item.rating));
 
+  // ── Render ────────────────────────────────────────────────────────────────
+
   return (
-    <div style={{ minHeight: '100vh', background: '#000000', color: '#ffffff', fontFamily: 'inherit', overflowX: 'hidden' }}>
+    <div className="pb-10">
 
       {/* ── Hero ── */}
-      {hero && (
-        <div style={{ position: 'relative', width: '100%', height: '75vh', minHeight: 460, display: 'flex', alignItems: 'flex-end' }}>
-          <div style={{ position: 'absolute', inset: 0 }}>
-            <img
-              src={hero.personalizedPoster || hero.item.poster_url || ''}
-              alt={hero.item.title}
-              style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.55 }}
-            />
-            {/* vignettes */}
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, #080810 0%, #08081080 50%, transparent 100%)' }} />
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, #080810 0%, #08081050 55%, transparent 100%)' }} />
-          </div>
-
-          <div style={{ position: 'relative', zIndex: 2, padding: '0 48px 56px', maxWidth: 680 }}>
-            {/* Top Pick badge */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-                background: '#E5091420', border: '1px solid #E5091440',
-                color: '#E50914', fontSize: 11, fontWeight: 800,
-                letterSpacing: '0.08em', textTransform: 'uppercase',
-                borderRadius: 6, padding: '4px 10px',
-              }}>
-                <Sparkles style={{ width: 11, height: 11 }} />
-                Top pick for you
-              </span>
-              <MatchBadge score={hero.score} />
-            </div>
-
-            <h1 style={{ margin: '0 0 14px', fontSize: 'clamp(32px, 5vw, 60px)', fontWeight: 800, lineHeight: 1.1, letterSpacing: '-0.02em' }}>
-              {hero.item.title}
-            </h1>
-
-            {/* Meta row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
-              <CategoryPill label={hero.category} />
-              <span style={{ fontSize: 13, color: '#a3a3a3' }}>{hero.item.year}</span>
-              {hero.item.rating && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#facc15' }}>
-                  <Star style={{ width: 13, height: 13 }} fill="#facc15" />
-                  {parseFloat(hero.item.rating).toFixed(1)}
-                </span>
-              )}
-              <span style={{ fontSize: 13, color: '#a3a3a3' }}>{hero.item.genre?.split(',').slice(0, 2).join(' · ')}</span>
-            </div>
-
-            {/* Reason blurb */}
-            {hero.reasons.length > 0 && (
-              <p style={{ margin: '0 0 24px', fontSize: 15, color: '#a3a3a3', lineHeight: 1.6, maxWidth: 520 }}>
-                {hero.reasons[0]}
-              </p>
-            )}
-
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <button
-                onClick={() => handlePlay(hero.item)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  background: 'white', color: '#0f0f0f',
-                  border: 'none', borderRadius: 8, padding: '12px 28px',
-                  fontSize: 15, fontWeight: 700, cursor: 'pointer',
-                  transition: 'background 0.15s',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#e2e8f0')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'white')}
-              >
-                <Play style={{ width: 16, height: 16 }} fill="#0f0f0f" /> Play
-              </button>
-              <button
-                onClick={() => handleCardClick(hero.item)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  background: 'rgba(255,255,255,0.08)', color: '#ffffff',
-                  border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '12px 24px',
-                  fontSize: 15, fontWeight: 600, cursor: 'pointer',
-                  backdropFilter: 'blur(8px)', transition: 'background 0.15s',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.14)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
-              >
-                <Info style={{ width: 16, height: 16 }} /> More info
-              </button>
+      <div className="p-6 pt-6">
+        {loading || !hero ? (
+          <div className="relative w-full h-[75vh] overflow-hidden rounded-2xl bg-[#121212] animate-pulse">
+            <div className="absolute bottom-16 left-12 space-y-4">
+              <div className="h-5 w-40 bg-white/5 rounded" />
+              <div className="h-12 w-96 bg-white/5 rounded" />
+              <div className="h-4 w-72 bg-white/5 rounded" />
+              <div className="flex gap-4 mt-6">
+                <div className="h-12 w-36 bg-white/5 rounded-lg" />
+                <div className="h-12 w-36 bg-white/5 rounded-lg" />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="relative w-full h-[75vh] overflow-hidden rounded-2xl">
+            {/* Background with Ken Burns */}
+            <div className="absolute inset-0">
+              <motion.div
+                initial={{ scale: 1 }}
+                animate={{ scale: 1.08 }}
+                transition={{ duration: 25, repeat: Infinity, repeatType: 'reverse' }}
+                className="w-full h-full"
+              >
+                <img
+                  src={hero.personalizedPoster || hero.item.poster_url}
+                  alt={hero.item.title}
+                  className="w-full h-full object-cover"
+                />
+              </motion.div>
+              <div className="absolute inset-0 bg-gradient-to-t from-[#070707] via-[#070707]/30 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-r from-[#070707]/90 via-[#070707]/40 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#070707]" />
+              <div className="absolute inset-0 shadow-[inset_0_0_120px_rgba(229,9,20,0.1)]" />
+            </div>
 
-      {/* ── Content ── */}
-      <div style={{ padding: '40px 32px 96px', display: 'flex', flexDirection: 'column', gap: 56 }}>
+            {/* Content */}
+            <div className="relative h-full flex flex-col justify-end p-5 sm:p-8 pb-10 sm:pb-12 lg:p-12 lg:pb-16">
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8, delay: 0.2 }}
+                className="max-w-2xl space-y-5"
+              >
+                {/* Metadata pills — matches HeroBanner exactly */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E50914]/15 backdrop-blur-md text-xs text-[#E50914] border border-[#E50914]/25 font-medium">
+                    <Sparkles className="w-3 h-3" />
+                    Top pick for you
+                  </span>
+                  <span className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs text-white border border-white/15">
+                    {Math.round(hero.score)}% match
+                  </span>
+                  {hero.item.year && (
+                    <span className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs text-white border border-white/15">
+                      {hero.item.year}
+                    </span>
+                  )}
+                  {hero.item.genre && (
+                    <span className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs text-white border border-white/15 uppercase tracking-wider font-medium">
+                      {hero.item.genre.split(',')[0]}
+                    </span>
+                  )}
+                </div>
+
+                {/* Title */}
+                <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white tracking-tight leading-tight drop-shadow-2xl">
+                  {hero.item.title}
+                </h1>
+
+                {/* Reason */}
+                {hero.reasons[0] && (
+                  <p className="text-sm sm:text-base text-white/70 leading-relaxed max-w-lg line-clamp-2">
+                    {hero.reasons[0]}
+                  </p>
+                )}
+
+                {/* Buttons — matches HeroBanner exactly */}
+                <div className="flex items-center gap-3 pt-2 flex-wrap">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => handlePlay(hero.item)}
+                    className="flex items-center gap-2.5 px-5 sm:px-7 py-3 sm:py-3.5 bg-[#E50914] rounded-xl text-white
+                               shadow-[0_0_30px_rgba(229,9,20,0.4)] hover:shadow-[0_0_45px_rgba(229,9,20,0.6)]
+                               hover:bg-[#ff1a25] transition-all duration-300 w-full sm:w-auto justify-center"
+                  >
+                    <Play className="w-5 h-5" fill="currentColor" />
+                    <span className="text-sm font-semibold">Play Now</span>
+                  </motion.button>
+
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => handleCardClick(hero.item)}
+                    className="flex items-center gap-2.5 px-7 py-3.5 bg-white/8 backdrop-blur-xl rounded-xl
+                               text-white border border-white/15 hover:bg-white/12 hover:border-white/25
+                               transition-all duration-300"
+                  >
+                    <Info className="w-5 h-5" />
+                    <span className="text-sm font-semibold">More Info</span>
+                  </motion.button>
+                </div>
+              </motion.div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Content rows ── */}
+      <div className="space-y-10 py-6">
 
         {/* Filter chips */}
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+        <div className="flex items-center gap-2 overflow-x-auto px-6" style={{ scrollbarWidth: 'none' }}>
           {FILTERS.map(f => (
             <button
               key={f}
               onClick={() => setActiveFilter(f)}
-              style={{
-                flexShrink: 0,
-                background: activeFilter === f ? 'white' : 'rgba(255,255,255,0.06)',
-                color: activeFilter === f ? '#0f0f0f' : '#a3a3a3',
-                border: activeFilter === f ? 'none' : '1px solid rgba(255,255,255,0.08)',
-                borderRadius: 20, padding: '7px 18px',
-                fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                transition: 'all 0.15s',
-              }}
+              className={`flex-none px-5 py-2 rounded-full text-sm font-semibold transition-all
+                ${activeFilter === f
+                  ? 'bg-[#E50914] text-white shadow-[0_0_20px_rgba(229,9,20,0.35)]'
+                  : 'bg-white/5 text-white/60 border border-white/10 hover:bg-white/10 hover:text-white'
+                }`}
             >
               {f}
             </button>
           ))}
         </div>
 
-        {/* Discover Weekly row */}
-        <RowSection
-          title="Discover Weekly"
-          subtitle="Fresh picks based on your taste profile"
-          icon={<Compass style={{ width: 18, height: 18 }} />}
-          accentColor="#a78bfa"
-          recs={discoverRecs.length ? discoverRecs : recommendations.slice(1, 13)}
-          onCardClick={handleCardClick}
-        />
+        {/* Discover Weekly */}
+        {loading
+          ? <SkeletonRow title="✨ Discover Weekly" />
+          : <RecommendationRow
+            title="✨ Discover Weekly"
+            subtitle="Fresh picks outside your usual genres"
+            recs={discoverRecs.length ? discoverRecs : recommendations.slice(1, 16)}
+            onCardClick={handleCardClick}
+          />
+        }
 
-        {/* Because you watched row */}
-        <RowSection
-          title={historyTitle}
-          subtitle="Viewers with similar tastes also enjoyed these"
-          icon={<TrendingUp style={{ width: 18, height: 18 }} />}
-          accentColor="#34d399"
-          recs={becauseWatched}
-          onCardClick={handleCardClick}
-        />
+        {/* Because you watched */}
+        {loading
+          ? <SkeletonRow title="🎯 Picked for You" />
+          : <RecommendationRow
+            title={`🎯 ${becauseTitle}`}
+            subtitle="Viewers with similar tastes also enjoyed these"
+            recs={becauseWatched}
+            onCardClick={handleCardClick}
+          />
+        }
 
-        {/* For You grid */}
-        <section>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20 }}>
-            <div>
-              <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Sparkles style={{ width: 18, height: 18, color: '#fb923c' }} />
-                {activeFilter === 'For You' ? 'Your Picks' : activeFilter}
-              </h2>
-              <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
-                {gridRecs.length} titles matched to your profile
-              </p>
+        {/* Top Rated */}
+        {loading
+          ? <SkeletonRow title="⭐ Top Rated Picks" />
+          : <RecommendationRow
+            title="⭐ Top Rated Picks"
+            subtitle="Highest-scoring titles matched to your profile"
+            recs={topRated}
+            onCardClick={handleCardClick}
+          />
+        }
+
+        {/* Full grid */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-6">
+            <h2 className="text-xl text-white font-medium">
+              🍿 {activeFilter === 'For You' ? 'Your Full Feed' : activeFilter}
+            </h2>
+            <span className="text-xs text-[#666] uppercase tracking-wider">
+              {loading ? '—' : `${Math.min(gridRecs.length, 40)} titles`}
+            </span>
+          </div>
+
+          {loading ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 px-6">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <div key={i}>
+                  <div className="aspect-[2/3] rounded-xl bg-white/5 animate-pulse" />
+                  <div className="mt-2 h-4 bg-white/5 rounded animate-pulse w-3/4" />
+                  <div className="mt-1 h-3 bg-white/5 rounded animate-pulse w-1/2" />
+                </div>
+              ))}
             </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '20px 14px' }}>
-            {gridRecs.slice(0, 40).map(rec => (
-              <GridCard
-                key={rec.item.tmdb_id || rec.item.imdb_id}
-                rec={rec}
-                onClick={() => handleCardClick(rec.item)}
-              />
-            ))}
-          </div>
-        </section>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 px-6">
+              {gridRecs.slice(0, 40).map((rec, idx) => (
+                <MovieCard
+                  key={`${rec.item.tmdb_id}-${idx}`}
+                  tmdb_id={rec.item.tmdb_id}
+                  imdb_id={rec.item.imdb_id}
+                  title={rec.item.title}
+                  year={rec.item.year}
+                  rating={rec.item.rating}
+                  poster_url={rec.item.poster_url}
+                  genre={rec.item.genre}
+                  type={rec.item.type}
+                  personalizedPoster={rec.personalizedPoster}
+                  onCardClick={handleCardClick}
+                />
+              ))}
+            </div>
+          )}
+        </div>
 
       </div>
 
       {/* ── Modal ── */}
       {isModalOpen && selectedMovie && (
         <MoviePreviewModal
+          key={selectedMovie.tmdb_id || selectedMovie.imdb_id}
           movie={{
             id: selectedMovie.tmdb_id || selectedMovie.imdb_id,
             tmdb_id: selectedMovie.tmdb_id,
@@ -553,37 +484,34 @@ export function RecommendationsPage() {
         />
       )}
 
-      {/* ── Inline player ── */}
+      {/* ── Player ── */}
       {showPlayer && selectedMovie && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: '#000', display: 'flex', flexDirection: 'column' }}>
-          <div style={{
-            height: 52, background: '#0a0a0a', padding: '0 16px',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            borderBottom: '1px solid rgba(255,255,255,0.05)',
-          }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Now Playing: {selectedMovie.title}</span>
-            <button
-              onClick={() => setShowPlayer(false)}
-              style={{
-                background: '#E50914', border: 'none', color: 'white',
-                borderRadius: 6, padding: '5px 14px', fontSize: 12,
-                fontWeight: 700, cursor: 'pointer',
-              }}
-            >
-              Exit
-            </button>
+        <Suspense fallback={
+          <div className="fixed inset-0 flex items-center justify-center bg-black text-white">
+            Loading player…
           </div>
-          <div style={{ flex: 1 }}>
-            <Suspense fallback={
-              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <RefreshCw style={{ width: 32, height: 32, color: '#E50914', animation: 'spin 1s linear infinite' }} />
-              </div>
-            }>
-              <LazyPlayer type={selectedMovie.type} />
-            </Suspense>
+        }>
+          <div className="fixed inset-0 z-50 bg-black flex flex-col">
+            <div className="flex items-center justify-between px-4 py-2 bg-black/80 backdrop-blur-md">
+              <span className="text-white text-sm font-semibold">{selectedMovie.title}</span>
+              <button
+                onClick={() => { setShowPlayer(false); setSelectedMovie(null); }}
+                className="text-white/70 hover:text-white text-xs px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+              >
+                ✕ Close
+              </button>
+            </div>
+            <div className="relative flex-1">
+              <LazyPlayer
+                embedUrl={selectedMovie.embed_url}
+                type={selectedMovie.type}
+                title={selectedMovie.title}
+              />
+            </div>
           </div>
-        </div>
+        </Suspense>
       )}
+
     </div>
   );
 }
