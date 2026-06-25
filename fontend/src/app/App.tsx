@@ -10,6 +10,7 @@ import { ContinueWatchingPage } from './pages/ContinueWatchingPage';
 import { PlayerPage } from './pages/PlayerPage';
 import { SearchResultsPage } from './pages/SearchResultsPage';
 import { DetailPage } from './pages/DetailPage';
+import { RecommendationsPage } from './pages/RecommendationsPage';
 
 export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -55,6 +56,7 @@ export default function App() {
               <Route path="/series" element={<SeriesPage />} />
               <Route path="/watchlist" element={<WatchlistPage />} />
               <Route path="/continue" element={<ContinueWatchingPage />} />
+              <Route path="/recommendations" element={<RecommendationsPage />} />
               <Route path="/search" element={<SearchResultsPage />} />
               <Route path="/movie/:id" element={<DetailPage type="movie" />} />
               <Route path="/tv/:id" element={<DetailPage type="tv" />} />

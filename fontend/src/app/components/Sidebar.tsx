@@ -1,4 +1,4 @@
-import { Home, TrendingUp, Film, Tv, Bookmark, Clock, Settings, Menu, X } from 'lucide-react';
+import { Home, TrendingUp, Film, Tv, Bookmark, Clock, Settings, Menu, X, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 
@@ -13,6 +13,7 @@ const navItems: NavItem[] = [
   { icon: Home, label: 'Home', id: 'home', path: '/' },
   { icon: Film, label: 'Movies', id: 'movies', path: '/movies' },
   { icon: Tv, label: 'Series', id: 'series', path: '/series' },
+  { icon: Sparkles, label: 'Recommendations', id: 'recommendations', path: '/recommendations' },
   { icon: Bookmark, label: 'Watchlist', id: 'watchlist', path: '/watchlist' },
   { icon: Clock, label: 'Continue Watching', id: 'continue', path: '/continue' },
 ];
@@ -32,6 +33,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     if (path === '/series') return 'series';
     if (path === '/watchlist') return 'watchlist';
     if (path === '/continue') return 'continue';
+    if (path === '/recommendations') return 'recommendations';
     return 'home';
   };
 
