@@ -36,7 +36,9 @@ const STORAGE_KEYS = {
   WATCH_HISTORY: 'movietime_watch_history',
   WATCH_LIKES: 'movietime_watch_likes',
   PREFERENCES: 'movietime_preferences',
+  FAVORITE_GENRES: 'movietime_fav_genres',
 } as const;
+
 
 // ---- Watch Progress (Resume Playback) ----
 
@@ -332,3 +334,23 @@ export function setupPlayerListener(callbacks: {
   window.addEventListener('message', handler);
   return () => window.removeEventListener('message', handler);
 }
+
+// ---- Favorite Genres Storage ----
+
+export function getFavoriteGenres(): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.FAVORITE_GENRES);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveFavoriteGenres(genres: string[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.FAVORITE_GENRES, JSON.stringify(genres));
+  } catch (e) {
+    console.error('Failed to save favorite genres', e);
+  }
+}
+
