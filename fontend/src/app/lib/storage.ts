@@ -2,6 +2,8 @@
 // Cookie and Local Storage Manager
 // ============================
 
+import { loadUserProfile, logRecommendationAction } from './recommender';
+
 // Helper functions for Cookies
 function setCookie(name: string, value: string, days = 365): void {
   try {
@@ -147,6 +149,7 @@ export function addToWatchlist(item: WatchlistItem): void {
     const serialized = JSON.stringify(list);
     localStorage.setItem(STORAGE_KEYS.WATCHLIST, serialized);
     setCookie(STORAGE_KEYS.WATCHLIST, serialized);
+    logUserActivity(item.id, item.title, 'watchlist_add', item.genre || '');
   }
 }
 
@@ -192,11 +195,14 @@ export function isLiked(id: string): boolean {
   return getLikedItems().some(item => item.id === id);
 }
 
-export function addLiked(id: string): void {
+export function addLiked(id: string, title?: string, genre?: string): void {
   const list = getLikedItems();
   if (!list.some(item => item.id === id)) {
     list.unshift({ id, addedAt: Date.now() });
     localStorage.setItem(STORAGE_KEYS.WATCH_LIKES, JSON.stringify(list));
+    if (title) {
+      logUserActivity(id, title, 'like', genre || '');
+    }
   }
 }
 
@@ -351,6 +357,21 @@ export function saveFavoriteGenres(genres: string[]): void {
     localStorage.setItem(STORAGE_KEYS.FAVORITE_GENRES, JSON.stringify(genres));
   } catch (e) {
     console.error('Failed to save favorite genres', e);
+  }
+}
+
+export function logUserActivity(
+  itemId: string,
+  itemTitle: string,
+  action: 'click' | 'play' | 'pause' | 'skip' | 'complete' | 'like' | 'watchlist_add' | 'search',
+  genresString: string
+): void {
+  try {
+    const profile = loadUserProfile();
+    logRecommendationAction(profile, itemId, itemTitle, action, genresString);
+    window.dispatchEvent(new Event('movietime_rl_update'));
+  } catch (err) {
+    console.warn('Failed to log user activity', err);
   }
 }
 

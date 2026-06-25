@@ -11,6 +11,7 @@ import {
   addToHistory,
   getPreferences,
   savePreferences,
+  logUserActivity,
 } from '../lib/storage';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
@@ -138,6 +139,12 @@ export function PlayerPage({ type }: PlayerPageProps) {
   const [playerTitle, setPlayerTitle] = useState('');
   const [playerPoster, setPlayerPoster] = useState('');
   const [volume, setVolume] = useState(75);
+  const [playerGenres, setPlayerGenres] = useState('');
+  const playLoggedRef = useRef(false);
+
+  useEffect(() => {
+    playLoggedRef.current = false;
+  }, [id, season, episode]);
 
   // Initialize player volume on mount
   useEffect(() => {
@@ -355,6 +362,8 @@ export function PlayerPage({ type }: PlayerPageProps) {
           if (mapped) {
             setPlayerTitle(mapped.title);
             setPlayerPoster(mapped.poster_url);
+            const genresString = detail.genres ? detail.genres.map((g: any) => g.name).join(', ') : '';
+            setPlayerGenres(genresString);
             if (detail.runtime) {
               setCurrentDuration(detail.runtime * 60);
             } else {
@@ -367,6 +376,8 @@ export function PlayerPage({ type }: PlayerPageProps) {
           if (mapped) {
             setPlayerTitle(mapped.title);
             setPlayerPoster(mapped.poster_url);
+            const genresString = detail.genres ? detail.genres.map((g: any) => g.name).join(', ') : '';
+            setPlayerGenres(genresString);
             // Default TV episode duration: 45 minutes
             setCurrentDuration(45 * 60);
           }
@@ -1157,6 +1168,17 @@ export function PlayerPage({ type }: PlayerPageProps) {
         setCurrentDuration(duration);
         if (info?.title) setPlayerTitle(info.title);
 
+        // RL feedback loop: log play interaction once
+        if (progress > 0 && !playLoggedRef.current) {
+          playLoggedRef.current = true;
+          logUserActivity(
+            id,
+            info?.title || playerTitle || 'Unknown',
+            'play',
+            playerGenres
+          );
+        }
+
         saveWatchProgress({
           id,
           type,
@@ -1174,9 +1196,11 @@ export function PlayerPage({ type }: PlayerPageProps) {
         setIsPlaying(false);
         setLocalIsPlaying(false);
         setCurrentProgress(progress);
+        logUserActivity(id, playerTitle || 'Unknown', 'pause', playerGenres);
         // Host must use control pad / play button to broadcast — no auto-emit (prevents loops)
       },
       onComplete: () => {
+        logUserActivity(id, playerTitle || 'Unknown', 'complete', playerGenres);
         if (type === 'tv' && prefs.autoNextEpisode && seasonNum && episodeNum) {
           const nextEp = episodeNum + 1;
           navigate(`/watch/tv/${id}/${seasonNum}/${nextEp}${roomId ? `?room=${roomId}` : ''}`, { replace: true });
@@ -1184,13 +1208,20 @@ export function PlayerPage({ type }: PlayerPageProps) {
       },
       onSeeked: (progress) => {
         if (isRemoteUpdate.current) return;
+        
+        // If forward seek is > 30 seconds, log 'skip' action
+        const diff = progress - currentProgressRef.current;
+        if (diff > 30) {
+          logUserActivity(id, playerTitle || 'Unknown', 'skip', playerGenres);
+        }
+        
         setCurrentProgress(progress);
         // Host must use control pad / seek bar to broadcast — no auto-emit (prevents loops)
       },
     });
 
     return cleanup;
-  }, [id, type, seasonNum, episodeNum, playerTitle, playerPoster, prefs.autoNextEpisode, navigate, roomId]);
+  }, [id, type, seasonNum, episodeNum, playerTitle, playerPoster, prefs.autoNextEpisode, navigate, roomId, playerGenres]);
 
   // Auto-hide player controls
   const resetControlsTimeout = useCallback(() => {

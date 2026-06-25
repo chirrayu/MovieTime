@@ -19,9 +19,10 @@ interface MovieCardProps {
   duration?: number;
   // Optional callback when the card is clicked (used for preview modal)
   onCardClick?: (movie: MovieCardProps) => void;
+  personalizedPoster?: string;
 }
 
-export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, genre, type, progress, duration, onCardClick }: MovieCardProps) {
+export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, genre, type, progress, duration, onCardClick, personalizedPoster }: MovieCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [inList, setInList] = useState(isInWatchlist(tmdb_id || imdb_id));
   const navigate = useNavigate();
@@ -45,13 +46,14 @@ export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, g
         title,
         year,
         rating,
-        poster_url,
+        poster_url: personalizedPoster || poster_url,
         genre,
         type,
         embed_url: undefined,
         progress,
         duration,
         onCardClick,
+        personalizedPoster,
       });
     } else {
       const path = type === 'movie' ? `/movie/${tmdb_id}` : `/tv/${tmdb_id}`;
@@ -87,9 +89,9 @@ export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, g
     >
       {/* Movie Poster */}
       <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-[#1a1a1a]">
-        {poster_url ? (
+        {poster_url || personalizedPoster ? (
           <img
-            src={poster_url}
+            src={personalizedPoster || poster_url}
             alt={title}
             className="w-full h-full object-cover transition-all duration-500"
             loading="lazy"
