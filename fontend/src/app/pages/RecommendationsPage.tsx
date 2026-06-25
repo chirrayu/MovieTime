@@ -30,8 +30,8 @@ const FILTERS = ['For You', 'New Discoveries', 'Trending', 'Highly Rated'];
 function MatchBadge({ score }: { score: number }) {
   const pct = Math.round(score);
   const color =
-    pct >= 75 ? '#4ade80' :
-      pct >= 55 ? '#facc15' : '#94a3b8';
+    pct >= 75 ? '#E50914' :
+      pct >= 55 ? '#ff6b6b' : '#a3a3a3';
   return (
     <span style={{ color, fontSize: 11, fontWeight: 700, letterSpacing: '0.02em' }}>
       {pct}% match
@@ -41,9 +41,9 @@ function MatchBadge({ score }: { score: number }) {
 
 function CategoryPill({ label }: { label: string }) {
   const colors: Record<string, string> = {
-    'Safe Pick': '#3b82f6',
-    'Adjacent Pick': '#a855f7',
-    'Discovery Pick': '#f97316',
+    'Safe Pick': '#E50914',
+    'Adjacent Pick': '#E50914',
+    'Discovery Pick': '#E50914',
   };
   return (
     <span style={{
@@ -51,9 +51,9 @@ function CategoryPill({ label }: { label: string }) {
       fontWeight: 700,
       letterSpacing: '0.05em',
       textTransform: 'uppercase',
-      color: colors[label] ?? '#94a3b8',
-      background: (colors[label] ?? '#94a3b8') + '1a',
-      border: `1px solid ${colors[label] ?? '#94a3b8'}33`,
+      color: colors[label] ?? '#a3a3a3',
+      background: (colors[label] ?? '#a3a3a3') + '1a',
+      border: `1px solid ${colors[label] ?? '#a3a3a3'}33`,
       borderRadius: 4,
       padding: '2px 7px',
     }}>
@@ -88,7 +88,7 @@ function PosterCard({ rec, onClick }: { rec: ScoredRecommendation; onClick: () =
         aspectRatio: '2/3',
         borderRadius: 12,
         overflow: 'hidden',
-        background: '#1a1a1a',
+        background: '#111111',
         boxShadow: hovered ? '0 16px 40px rgba(0,0,0,0.7)' : '0 4px 16px rgba(0,0,0,0.4)',
         transition: 'box-shadow 0.2s ease',
       }}>
@@ -109,7 +109,7 @@ function PosterCard({ rec, onClick }: { rec: ScoredRecommendation; onClick: () =
         }}>
           <MatchBadge score={rec.score} />
           {genres[0] && (
-            <span style={{ fontSize: 11, color: '#94a3b8' }}>{genres[0]}</span>
+            <span style={{ fontSize: 11, color: '#a3a3a3' }}>{genres[0]}</span>
           )}
           <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
             <button
@@ -175,7 +175,7 @@ function RowSection({
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <h2 style={{
-            margin: 0, fontSize: 20, fontWeight: 700, color: '#f1f5f9',
+            margin: 0, fontSize: 20, fontWeight: 700, color: '#ffffff',
             display: 'flex', alignItems: 'center', gap: 8,
           }}>
             <span style={{ color: accentColor }}>{icon}</span>
@@ -219,7 +219,7 @@ function GridCard({ rec, onClick }: { rec: ScoredRecommendation; onClick: () => 
     >
       <div style={{
         position: 'relative', aspectRatio: '2/3', borderRadius: 10, overflow: 'hidden',
-        background: '#1a1a1a',
+        background: '#111111',
         boxShadow: hovered ? '0 12px 32px rgba(0,0,0,0.6)' : '0 2px 8px rgba(0,0,0,0.3)',
         transition: 'box-shadow 0.2s',
       }}>
@@ -244,7 +244,7 @@ function GridCard({ rec, onClick }: { rec: ScoredRecommendation; onClick: () => 
       </div>
       <p style={{
         margin: '8px 0 2px', fontSize: 12, fontWeight: 600,
-        color: hovered ? '#f1f5f9' : '#94a3b8', transition: 'color 0.2s',
+        color: hovered ? '#f1f5f9' : '#a3a3a3', transition: 'color 0.2s',
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }}>{rec.item.title}</p>
       <p style={{ margin: 0, fontSize: 11, color: '#475569' }}>
@@ -374,7 +374,7 @@ export function RecommendationsPage() {
   if (activeFilter === 'Highly Rated') gridRecs = gridRecs.sort((a, b) => parseFloat(b.item.rating) - parseFloat(a.item.rating));
 
   return (
-    <div style={{ minHeight: '100vh', background: '#080810', color: '#f1f5f9', fontFamily: 'inherit', overflowX: 'hidden' }}>
+    <div style={{ minHeight: '100vh', background: '#000000', color: '#ffffff', fontFamily: 'inherit', overflowX: 'hidden' }}>
 
       {/* ── Hero ── */}
       {hero && (
@@ -413,19 +413,19 @@ export function RecommendationsPage() {
             {/* Meta row */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
               <CategoryPill label={hero.category} />
-              <span style={{ fontSize: 13, color: '#94a3b8' }}>{hero.item.year}</span>
+              <span style={{ fontSize: 13, color: '#a3a3a3' }}>{hero.item.year}</span>
               {hero.item.rating && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#facc15' }}>
                   <Star style={{ width: 13, height: 13 }} fill="#facc15" />
                   {parseFloat(hero.item.rating).toFixed(1)}
                 </span>
               )}
-              <span style={{ fontSize: 13, color: '#94a3b8' }}>{hero.item.genre?.split(',').slice(0, 2).join(' · ')}</span>
+              <span style={{ fontSize: 13, color: '#a3a3a3' }}>{hero.item.genre?.split(',').slice(0, 2).join(' · ')}</span>
             </div>
 
             {/* Reason blurb */}
             {hero.reasons.length > 0 && (
-              <p style={{ margin: '0 0 24px', fontSize: 15, color: '#94a3b8', lineHeight: 1.6, maxWidth: 520 }}>
+              <p style={{ margin: '0 0 24px', fontSize: 15, color: '#a3a3a3', lineHeight: 1.6, maxWidth: 520 }}>
                 {hero.reasons[0]}
               </p>
             )}
@@ -449,7 +449,7 @@ export function RecommendationsPage() {
                 onClick={() => handleCardClick(hero.item)}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8,
-                  background: 'rgba(255,255,255,0.08)', color: '#f1f5f9',
+                  background: 'rgba(255,255,255,0.08)', color: '#ffffff',
                   border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '12px 24px',
                   fontSize: 15, fontWeight: 600, cursor: 'pointer',
                   backdropFilter: 'blur(8px)', transition: 'background 0.15s',
@@ -476,7 +476,7 @@ export function RecommendationsPage() {
               style={{
                 flexShrink: 0,
                 background: activeFilter === f ? 'white' : 'rgba(255,255,255,0.06)',
-                color: activeFilter === f ? '#0f0f0f' : '#94a3b8',
+                color: activeFilter === f ? '#0f0f0f' : '#a3a3a3',
                 border: activeFilter === f ? 'none' : '1px solid rgba(255,255,255,0.08)',
                 borderRadius: 20, padding: '7px 18px',
                 fontSize: 13, fontWeight: 600, cursor: 'pointer',
@@ -512,7 +512,7 @@ export function RecommendationsPage() {
         <section>
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20 }}>
             <div>
-              <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Sparkles style={{ width: 18, height: 18, color: '#fb923c' }} />
                 {activeFilter === 'For You' ? 'Your Picks' : activeFilter}
               </h2>
