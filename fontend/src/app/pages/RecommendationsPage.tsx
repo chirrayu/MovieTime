@@ -2,9 +2,9 @@ import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { motion } from 'motion/react';
 import { MovieCard } from '../components/MovieCard';
 import { MoviePreviewModal } from '../components/MoviePreviewModal';
-import { ChevronLeft, ChevronRight, Sparkles, Play, Info, Plus, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sparkles, Play, Info } from 'lucide-react';
 import { getHistory, getAllWatchProgress } from '../lib/storage';
-import { getPopular, getTrending, getTopRated, mapTMDBToItem } from '../lib/api';
+import { fetchLatestMovies, fetchLatestTVShows, getTrending, mapTMDBToItem } from '../lib/api';
 import type { MovieItem, TVShowItem } from '../lib/api';
 import {
   loadUserProfile,
@@ -163,21 +163,27 @@ export function RecommendationsPage() {
 
         const profile: UserProfile = loadUserProfile();
 
-        const [popMovies, popTV, trending, topMovie, topTV] = await Promise.all([
-          getPopular('movie', 1).catch(() => ({ results: [] })),
-          getPopular('tv', 1).catch(() => ({ results: [] })),
+        // VidAPI is the primary source — same as HomePage, has real poster URLs.
+        // Fetch two pages each for breadth, supplement with TMDB trending.
+        const [vid1Movies, vid2Movies, vid1TV, vid2TV, trending] = await Promise.all([
+          fetchLatestMovies(1).catch(() => ({ items: [] })),
+          fetchLatestMovies(2).catch(() => ({ items: [] })),
+          fetchLatestTVShows(1).catch(() => ({ items: [] })),
+          fetchLatestTVShows(2).catch(() => ({ items: [] })),
           getTrending('all', 'week').catch(() => ({ results: [] })),
-          getTopRated('movie', 1).catch(() => ({ results: [] })),
-          getTopRated('tv', 1).catch(() => ({ results: [] })),
         ]);
 
-        const raw = [
-          ...popMovies.results.map(r => mapTMDBToItem({ ...r, media_type: 'movie' })),
-          ...popTV.results.map(r => mapTMDBToItem({ ...r, media_type: 'tv' })),
-          ...trending.results.map(r => mapTMDBToItem(r)),
-          ...topMovie.results.map(r => mapTMDBToItem({ ...r, media_type: 'movie' })),
-          ...topTV.results.map(r => mapTMDBToItem({ ...r, media_type: 'tv' })),
-        ].filter(Boolean) as (MovieItem | TVShowItem)[];
+        const raw: (MovieItem | TVShowItem)[] = [
+          // VidAPI first — guaranteed working poster URLs (same as HomePage)
+          ...vid1Movies.items,
+          ...vid2Movies.items,
+          ...vid1TV.items,
+          ...vid2TV.items,
+          // TMDB trending as lightweight supplement (includes media_type in response)
+          ...trending.results
+            .map(r => mapTMDBToItem(r))
+            .filter(Boolean) as (MovieItem | TVShowItem)[],
+        ].filter(item => !!item.poster_url); // drop anything with no poster
 
         const seen = new Set<string>();
         const pool: (MovieItem | TVShowItem)[] = [];
