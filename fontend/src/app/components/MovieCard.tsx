@@ -1,8 +1,9 @@
 import { Play, Plus, Star, Check } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { addToWatchlist, removeFromWatchlist, isInWatchlist } from '../lib/storage';
+import { getVideos } from '../lib/api';
 
 interface MovieCardProps {
   tmdb_id: string;
@@ -25,7 +26,42 @@ interface MovieCardProps {
 export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, genre, type, progress, duration, onCardClick, personalizedPoster }: MovieCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [inList, setInList] = useState(isInWatchlist(tmdb_id || imdb_id));
+  const [previewVideoKey, setPreviewVideoKey] = useState<string | null>(null);
+  const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    let active = true;
+    let timeoutId: any = null;
+
+    if (isHovered) {
+      timeoutId = setTimeout(async () => {
+        const id = tmdb_id || imdb_id;
+        if (!id) return;
+        setIsLoadingVideo(true);
+        try {
+          const data = await getVideos(type, id);
+          const trailer = data.results.find(
+            v => v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser' || v.type === 'Clip')
+          );
+          if (trailer && active) {
+            setPreviewVideoKey(trailer.key);
+          }
+        } catch (err) {
+          console.warn('Failed to fetch preview trailer:', err);
+        } finally {
+          if (active) setIsLoadingVideo(false);
+        }
+      }, 800);
+    } else {
+      setPreviewVideoKey(null);
+    }
+
+    return () => {
+      active = false;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isHovered, tmdb_id, imdb_id, type]);
 
   const handlePlay = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -103,6 +139,18 @@ export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, g
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#1a1a1a] to-[#0d0d0d]">
             <span className="text-[#333] text-4xl">🎬</span>
+          </div>
+        )}
+
+        {/* Hover preview video */}
+        {isHovered && previewVideoKey && (
+          <div className="absolute inset-0 bg-black pointer-events-none">
+            <iframe
+              src={`https://www.youtube.com/embed/${previewVideoKey}?autoplay=1&mute=1&controls=0&loop=1&playlist=${previewVideoKey}&playsinline=1&enablejsapi=1&showinfo=0&rel=0&modestbranding=1`}
+              className="w-full h-full border-0 scale-[1.3] pointer-events-none object-cover"
+              title="Trailer Preview"
+              allow="autoplay; encrypted-media"
+            />
           </div>
         )}
 

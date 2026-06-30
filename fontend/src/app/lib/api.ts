@@ -51,6 +51,12 @@ function buildVaPlayerTVUrl(id: string, season: number, episode: number, opts?: 
 
 export const EMBED_SOURCES: EmbedSource[] = [
   {
+    id: 'vidsrc',
+    label: 'VidSrc (Reliable)',
+    getMovieUrl: (id) => `https://vidsrc.in/embed/movie/${id}`,
+    getTVUrl: (id, s, e) => `https://vidsrc.in/embed/tv/${id}/${s}/${e}`,
+  },
+  {
     id: 'vidapi',
     label: 'VidAPI',
     getMovieUrl: (id, opts) => buildVaPlayerMovieUrl(id, opts),
@@ -339,10 +345,10 @@ async function tmdbFetch(path: string, params?: Record<string, string>) {
       if (params) {
         Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
       }
-      
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6000);
-      
+
       const res = await fetch(url.toString(), { signal: controller.signal });
       clearTimeout(timeoutId);
 
@@ -387,6 +393,18 @@ export async function getMovieDetails(tmdbId: string): Promise<TMDBMovieDetail> 
 
 export async function getTVDetails(tmdbId: string): Promise<TMDBTVDetail> {
   return tmdbFetch(`/tv/${tmdbId}`, { append_to_response: 'external_ids' });
+}
+
+export async function getVideos(
+  mediaType: 'movie' | 'tv',
+  tmdbId: string,
+): Promise<{
+  results: { key: string; site: string; type: string; official: boolean }[];
+}> {
+  if (!TMDB_API_KEY || !tmdbId) {
+    return { results: [] };
+  }
+  return tmdbFetch(`/${mediaType}/${tmdbId}/videos`);
 }
 
 export async function getSeasonEpisodes(tmdbId: string, seasonNumber: number): Promise<{
@@ -460,7 +478,7 @@ export function mapTMDBToItem(tmdb: TMDBSearchResult): MovieItem | TVShowItem | 
   const rating = tmdb.vote_average ? tmdb.vote_average.toFixed(1) : '0';
   const poster_url = tmdbPoster(tmdb.poster_path);
   const genre = tmdb.genre_ids ? getGenreNames(tmdb.genre_ids, tmdb.media_type) : '';
-  
+
   const extractedImdbId = (tmdb as any).imdb_id || (tmdb as any).external_ids?.imdb_id || '';
 
   if (isMovie) {
