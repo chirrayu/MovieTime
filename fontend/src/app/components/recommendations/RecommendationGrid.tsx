@@ -1,5 +1,5 @@
 import React from 'react';
-import { MovieCard } from '../MovieCard';
+import { RecommendationCard } from './RecommendationCard';
 import type { ScoredRecommendation } from '../../lib/recommender';
 
 const MAX_GRID_ITEMS = 40;
@@ -43,17 +43,9 @@ export function RecommendationGrid({
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 px-6">
           {visibleRecs.map((rec, idx) => (
-            <MovieCard
+            <RecommendationCard
               key={`${rec.item.tmdb_id || rec.item.imdb_id}-${idx}`}
-              tmdb_id={rec.item.tmdb_id}
-              imdb_id={rec.item.imdb_id}
-              title={rec.item.title}
-              year={rec.item.year}
-              rating={rec.item.rating}
-              poster_url={rec.item.poster_url}
-              genre={rec.item.genre}
-              type={rec.item.type}
-              personalizedPoster={rec.personalizedPoster}
+              rec={rec}
               onCardClick={onCardClick}
             />
           ))}

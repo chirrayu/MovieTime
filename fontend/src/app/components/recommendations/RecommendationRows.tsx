@@ -1,6 +1,7 @@
 import React, { useRef, useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { MovieCard } from '../MovieCard';
+import { RecommendationCard } from './RecommendationCard';
 import type { ScoredRecommendation } from '../../lib/recommender';
 import { getContinueWatching } from '../../lib/storage';
 import { useNavigate } from 'react-router';
@@ -88,18 +89,7 @@ function RecommendationRow({ title, subtitle, recs, onCardClick }: Recommendatio
         >
           {loopedRecs.map((rec, idx) => (
             <div key={`${rec.item.tmdb_id || rec.item.imdb_id}-${idx}`} className="flex-none w-44">
-              <MovieCard
-                tmdb_id={rec.item.tmdb_id}
-                imdb_id={rec.item.imdb_id}
-                title={rec.item.title}
-                year={rec.item.year}
-                rating={rec.item.rating}
-                poster_url={rec.item.poster_url}
-                genre={rec.item.genre}
-                type={rec.item.type}
-                personalizedPoster={rec.personalizedPoster}
-                onCardClick={onCardClick}
-              />
+              <RecommendationCard rec={rec} onCardClick={onCardClick} />
             </div>
           ))}
         </div>
