@@ -2,7 +2,7 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { ArrowLeft, Maximize2, Minimize2, SkipForward, List, Globe, Users, MessageSquare, Send, Share2, Sparkles, AlertCircle, X, Shield, Play, Pause, RefreshCw, Volume2, VolumeX } from 'lucide-react';
-import { getMovieEmbedUrl, getTVEmbedUrl, getMovieDetails, getTVDetails, mapTMDBToItem, EMBED_SOURCES, getPreferredSourceId, setPreferredSourceId } from '../lib/api';
+import { getMovieEmbedUrl, getTVEmbedUrl, getMovieDetails, getTVDetails, mapTMDBToItem } from '../lib/api';
 import { getCachedItem } from '../lib/cache';
 import {
   saveWatchProgress,
@@ -155,8 +155,6 @@ export function PlayerPage({ type }: PlayerPageProps) {
     return () => clearTimeout(timer);
   }, []);
   const [showLangDropdown, setShowLangDropdown] = useState(false);
-  const [showSourceDropdown, setShowSourceDropdown] = useState(false);
-  const [selectedSourceId, setSelectedSourceId] = useState<string>(() => getPreferredSourceId());
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -325,11 +323,11 @@ export function PlayerPage({ type }: PlayerPageProps) {
     };
 
     if (type === 'movie') {
-      setEmbedUrl(getMovieEmbedUrl(id, embedOptions, selectedSourceId));
+      setEmbedUrl(getMovieEmbedUrl(id, embedOptions));
     } else if (seasonNum && episodeNum) {
-      setEmbedUrl(getTVEmbedUrl(id, seasonNum, episodeNum, embedOptions, selectedSourceId));
+      setEmbedUrl(getTVEmbedUrl(id, seasonNum, episodeNum, embedOptions));
     }
-  }, [id, type, seasonNum, episodeNum, currentLang, prefs.playerColor, prefs.autoPlay, selectedSourceId]);
+  }, [id, type, seasonNum, episodeNum, currentLang, prefs.playerColor, prefs.autoPlay]);
 
   // ----------------------------------------------------
   // Sync URL Room parameter
@@ -1495,7 +1493,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
               {/* Language Switcher */}
               <div className="relative">
                 <button
-                  onClick={() => { setShowLangDropdown(!showLangDropdown); setShowSourceDropdown(false); }}
+                  onClick={() => setShowLangDropdown(!showLangDropdown)}
                   className="flex items-center gap-1.5 px-3 py-2 bg-white/10 backdrop-blur-md rounded-lg border border-white/10 text-white text-xs hover:bg-white/20 transition-all"
                   title="Dubbing / Language"
                 >
@@ -1519,45 +1517,6 @@ export function PlayerPage({ type }: PlayerPageProps) {
                 )}
               </div>
 
-              {/* Source Switcher */}
-              <div className="relative">
-                <button
-                  id="source-switcher-btn"
-                  onClick={() => { setShowSourceDropdown(!showSourceDropdown); setShowLangDropdown(false); }}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-white/10 backdrop-blur-md rounded-lg border border-white/10 text-white text-xs hover:bg-white/20 transition-all"
-                  title="Switch Streaming Source"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                  </svg>
-                  <span className="hidden sm:inline">{EMBED_SOURCES.find(s => s.id === selectedSourceId)?.label || 'Source'}</span>
-                </button>
-
-                {showSourceDropdown && (
-                  <div className="absolute right-0 top-full mt-2 w-40 bg-[#1a1a1a] border border-white/10 rounded-lg overflow-hidden shadow-2xl z-20">
-                    {EMBED_SOURCES.map(src => (
-                      <button
-                        key={src.id}
-                        id={`source-option-${src.id}`}
-                        onClick={() => {
-                          setSelectedSourceId(src.id);
-                          setPreferredSourceId(src.id);
-                          setShowSourceDropdown(false);
-                        }}
-                        className={`w-full px-4 py-2.5 text-xs text-left transition-colors flex items-center gap-2 ${selectedSourceId === src.id
-                          ? 'bg-[#E50914]/15 text-white'
-                          : 'text-[#9A9A9A] hover:bg-white/5 hover:text-white'
-                          }`}
-                      >
-                        {selectedSourceId === src.id && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#E50914] shrink-0" />
-                        )}
-                        {src.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
               {/* Ad Blocker Switch */}
               <button
                 onClick={toggleAdBlock}

@@ -2,23 +2,12 @@
 // VidAPI & TMDB API Integration
 // ============================
 
-// VidAPI — listing data (JSON catalogs)
-const VIDAPI_BASE = 'https://vidapi.ru';
-// VidAPI — embed player
-const VAPLAYER_BASE = 'https://vaplayer.ru';
 // VidSrc.sbs — embed player
 const VIDSRC_SBS_BASE = 'https://vidsrc.sbs';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 
-// ---- Multi-Source Embed Providers ----
-
-export interface EmbedSource {
-  id: string;
-  label: string;
-  getMovieUrl: (id: string, options?: EmbedOptions) => string;
-  getTVUrl: (id: string, season: number, episode: number, options?: EmbedOptions) => string;
-}
+// ---- Embed Options ----
 
 export interface EmbedOptions {
   resumeAt?: number;
@@ -27,28 +16,6 @@ export interface EmbedOptions {
   autoplay?: boolean;
   title?: string;
   poster?: string;
-}
-
-function buildVaPlayerMovieUrl(id: string, opts?: EmbedOptions): string {
-  const url = new URL(`${VAPLAYER_BASE}/embed/movie/${id}`);
-  url.searchParams.set('primaryColor', (opts?.primaryColor || '#E50914').replace('#', ''));
-  if (opts?.lang) url.searchParams.set('lang', opts.lang);
-  if (typeof opts?.autoplay === 'boolean') url.searchParams.set('autoplay', opts.autoplay ? '1' : '0');
-  if (opts?.resumeAt != null && opts.resumeAt > 0) url.searchParams.set('resumeAt', String(Math.floor(opts.resumeAt)));
-  if (opts?.title) url.searchParams.set('title', opts.title);
-  if (opts?.poster) url.searchParams.set('poster', opts.poster);
-  return url.toString();
-}
-
-function buildVaPlayerTVUrl(id: string, season: number, episode: number, opts?: EmbedOptions): string {
-  const url = new URL(`${VAPLAYER_BASE}/embed/tv/${id}/${season}/${episode}`);
-  url.searchParams.set('primaryColor', (opts?.primaryColor || '#E50914').replace('#', ''));
-  if (opts?.lang) url.searchParams.set('lang', opts.lang);
-  if (typeof opts?.autoplay === 'boolean') url.searchParams.set('autoplay', opts.autoplay ? '1' : '0');
-  if (opts?.resumeAt != null && opts.resumeAt > 0) url.searchParams.set('resumeAt', String(Math.floor(opts.resumeAt)));
-  if (opts?.title) url.searchParams.set('title', opts.title);
-  if (opts?.poster) url.searchParams.set('poster', opts.poster);
-  return url.toString();
 }
 
 function buildVidSrcSbsMovieUrl(id: string, opts?: EmbedOptions): string {
@@ -71,49 +38,6 @@ function buildVidSrcSbsTVUrl(id: string, season: number, episode: number, opts?:
   return url.toString();
 }
 
-export const EMBED_SOURCES: EmbedSource[] = [
-  {
-    id: 'vidsrc-sbs',
-    label: 'VidSrc.sbs',
-    getMovieUrl: (id, opts) => buildVidSrcSbsMovieUrl(id, opts),
-    getTVUrl: (id, s, e, opts) => buildVidSrcSbsTVUrl(id, s, e, opts),
-  },
-  {
-    id: 'vidsrc',
-    label: 'VidSrc.in',
-    getMovieUrl: (id) => `https://vidsrc.in/embed/movie/${id}`,
-    getTVUrl: (id, s, e) => `https://vidsrc.in/embed/tv/${id}/${s}/${e}`,
-  },
-  {
-    id: 'vidapi',
-    label: 'VidAPI',
-    getMovieUrl: (id, opts) => buildVaPlayerMovieUrl(id, opts),
-    getTVUrl: (id, s, e, opts) => buildVaPlayerTVUrl(id, s, e, opts),
-  },
-];
-
-// Persist user's preferred source across sessions
-const SOURCE_PREF_KEY = 'movietime_embed_source';
-
-export function getPreferredSourceId(): string {
-  try {
-    return localStorage.getItem(SOURCE_PREF_KEY) || EMBED_SOURCES[0].id; // defaults to 'vidsrc-sbs'
-  } catch {
-    return EMBED_SOURCES[0].id;
-  }
-}
-
-export function setPreferredSourceId(id: string): void {
-  try {
-    localStorage.setItem(SOURCE_PREF_KEY, id);
-  } catch {
-    // ignore
-  }
-}
-
-export function getSourceById(id: string): EmbedSource {
-  return EMBED_SOURCES.find(s => s.id === id) ?? EMBED_SOURCES[0];
-}
 
 const TMDB_API_KEY = '15d2ea6d0dc1d476efbca3eba2b9bbfb'; // Public TMDB API key for full search functionality
 
@@ -250,37 +174,21 @@ export function tmdbPoster(path: string | null, size: 'w200' | 'w342' | 'w500' |
 }
 
 // ---- Embed URL Builders ----
-// These delegate to the active embed source. Pass sourceId to override per-request.
 
-export function getMovieEmbedUrl(
-  id: string,
-  options?: EmbedOptions,
-  sourceId?: string,
-): string {
-  const source = getSourceById(sourceId ?? getPreferredSourceId());
-  return source.getMovieUrl(id, { primaryColor: '#E50914', ...options });
+export function getMovieEmbedUrl(id: string, options?: EmbedOptions): string {
+  return buildVidSrcSbsMovieUrl(id, { primaryColor: '#E50914', ...options });
 }
 
-export function getTVEmbedUrl(
-  id: string,
-  season: number,
-  episode: number,
-  options?: EmbedOptions,
-  sourceId?: string,
-): string {
-  const source = getSourceById(sourceId ?? getPreferredSourceId());
-  return source.getTVUrl(id, season, episode, { primaryColor: '#E50914', ...options });
+export function getTVEmbedUrl(id: string, season: number, episode: number, options?: EmbedOptions): string {
+  return buildVidSrcSbsTVUrl(id, season, episode, { primaryColor: '#E50914', ...options });
 }
 
-// ---- VidAPI Listing Endpoints ----
-// VidAPI listings are the PRIMARY data source — they return ready-made vaplayer.ru embed URLs.
-// TMDB is used as an enrichment fallback for search/details only.
+// ---- Listing Endpoints ----
 
 export async function fetchLatestMovies(page: number = 1): Promise<PaginatedResponse<MovieItem>> {
   try {
-    // VidAPI listing is primary — embed_url already points to vaplayer.ru
     const data = await fetchVidLatestMovies(page);
-    // Re-stamp embed URLs through our builder so options (color, etc.) are applied
+    // Re-stamp embed URLs so VidSrc.sbs options (color, etc.) are applied
     data.items = data.items.map(m => ({
       ...m,
       embed_url: getMovieEmbedUrl(m.imdb_id || m.tmdb_id),
