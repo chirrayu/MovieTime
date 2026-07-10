@@ -155,6 +155,8 @@ export function PlayerPage({ type }: PlayerPageProps) {
     return () => clearTimeout(timer);
   }, []);
   const [showLangDropdown, setShowLangDropdown] = useState(false);
+  const [showSourceDropdown, setShowSourceDropdown] = useState(false);
+  const [selectedSourceId, setSelectedSourceId] = useState<string>(() => getPreferredSourceId());
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -323,11 +325,11 @@ export function PlayerPage({ type }: PlayerPageProps) {
     };
 
     if (type === 'movie') {
-      setEmbedUrl(getMovieEmbedUrl(id, embedOptions));
+      setEmbedUrl(getMovieEmbedUrl(id, embedOptions, selectedSourceId));
     } else if (seasonNum && episodeNum) {
-      setEmbedUrl(getTVEmbedUrl(id, seasonNum, episodeNum, embedOptions));
+      setEmbedUrl(getTVEmbedUrl(id, seasonNum, episodeNum, embedOptions, selectedSourceId));
     }
-  }, [id, type, seasonNum, episodeNum, currentLang, prefs.playerColor, prefs.autoPlay]);
+  }, [id, type, seasonNum, episodeNum, currentLang, prefs.playerColor, prefs.autoPlay, selectedSourceId]);
 
   // ----------------------------------------------------
   // Sync URL Room parameter
@@ -1208,13 +1210,13 @@ export function PlayerPage({ type }: PlayerPageProps) {
       },
       onSeeked: (progress) => {
         if (isRemoteUpdate.current) return;
-        
+
         // If forward seek is > 30 seconds, log 'skip' action
         const diff = progress - currentProgressRef.current;
         if (diff > 30) {
           logUserActivity(id, playerTitle || 'Unknown', 'skip', playerGenres);
         }
-        
+
         setCurrentProgress(progress);
         // Host must use control pad / seek bar to broadcast — no auto-emit (prevents loops)
       },
@@ -1421,14 +1423,6 @@ export function PlayerPage({ type }: PlayerPageProps) {
               </button>
 
               <div>
-                <h2 className="text-white text-sm font-semibold flex items-center gap-2">
-                  {playerTitle || 'Now Playing'}
-                  {roomId && (
-                    <span className="px-2 py-0.5 text-[10px] bg-[#E50914] text-white rounded-full font-medium tracking-wide shadow-[0_0_8px_rgba(229,9,20,0.4)] flex items-center gap-1 animate-pulse">
-                      <Sparkles className="w-2.5 h-2.5" /> Watch Party
-                    </span>
-                  )}
-                </h2>
                 {type === 'tv' && seasonNum && episodeNum && (
                   <p className="text-[#9A9A9A] text-xs">
                     Season {seasonNum} · Episode {episodeNum}
@@ -1501,7 +1495,7 @@ export function PlayerPage({ type }: PlayerPageProps) {
               {/* Language Switcher */}
               <div className="relative">
                 <button
-                  onClick={() => setShowLangDropdown(!showLangDropdown)}
+                  onClick={() => { setShowLangDropdown(!showLangDropdown); setShowSourceDropdown(false); }}
                   className="flex items-center gap-1.5 px-3 py-2 bg-white/10 backdrop-blur-md rounded-lg border border-white/10 text-white text-xs hover:bg-white/20 transition-all"
                   title="Dubbing / Language"
                 >
@@ -1525,8 +1519,45 @@ export function PlayerPage({ type }: PlayerPageProps) {
                 )}
               </div>
 
+              {/* Source Switcher */}
+              <div className="relative">
+                <button
+                  id="source-switcher-btn"
+                  onClick={() => { setShowSourceDropdown(!showSourceDropdown); setShowLangDropdown(false); }}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-white/10 backdrop-blur-md rounded-lg border border-white/10 text-white text-xs hover:bg-white/20 transition-all"
+                  title="Switch Streaming Source"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                  <span className="hidden sm:inline">{EMBED_SOURCES.find(s => s.id === selectedSourceId)?.label || 'Source'}</span>
+                </button>
 
-
+                {showSourceDropdown && (
+                  <div className="absolute right-0 top-full mt-2 w-40 bg-[#1a1a1a] border border-white/10 rounded-lg overflow-hidden shadow-2xl z-20">
+                    {EMBED_SOURCES.map(src => (
+                      <button
+                        key={src.id}
+                        id={`source-option-${src.id}`}
+                        onClick={() => {
+                          setSelectedSourceId(src.id);
+                          setPreferredSourceId(src.id);
+                          setShowSourceDropdown(false);
+                        }}
+                        className={`w-full px-4 py-2.5 text-xs text-left transition-colors flex items-center gap-2 ${selectedSourceId === src.id
+                          ? 'bg-[#E50914]/15 text-white'
+                          : 'text-[#9A9A9A] hover:bg-white/5 hover:text-white'
+                          }`}
+                      >
+                        {selectedSourceId === src.id && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#E50914] shrink-0" />
+                        )}
+                        {src.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               {/* Ad Blocker Switch */}
               <button
                 onClick={toggleAdBlock}

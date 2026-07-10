@@ -6,6 +6,8 @@
 const VIDAPI_BASE = 'https://vidapi.ru';
 // VidAPI — embed player
 const VAPLAYER_BASE = 'https://vaplayer.ru';
+// VidSrc.sbs — embed player
+const VIDSRC_SBS_BASE = 'https://vidsrc.sbs';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 
@@ -49,10 +51,36 @@ function buildVaPlayerTVUrl(id: string, season: number, episode: number, opts?: 
   return url.toString();
 }
 
+function buildVidSrcSbsMovieUrl(id: string, opts?: EmbedOptions): string {
+  const url = new URL(`${VIDSRC_SBS_BASE}/embed/movie/${id}`);
+  const color = (opts?.primaryColor || '#E50914').replace('#', '');
+  url.searchParams.set('color', color);
+  if (opts?.lang) url.searchParams.set('sub', opts.lang);
+  if (opts?.autoplay) url.searchParams.set('autoplay', '1');
+  if (opts?.resumeAt != null && opts.resumeAt > 0) url.searchParams.set('t', String(Math.floor(opts.resumeAt)));
+  return url.toString();
+}
+
+function buildVidSrcSbsTVUrl(id: string, season: number, episode: number, opts?: EmbedOptions): string {
+  const url = new URL(`${VIDSRC_SBS_BASE}/embed/tv/${id}/${season}/${episode}`);
+  const color = (opts?.primaryColor || '#E50914').replace('#', '');
+  url.searchParams.set('color', color);
+  if (opts?.lang) url.searchParams.set('sub', opts.lang);
+  if (opts?.autoplay) url.searchParams.set('autoplay', '1');
+  if (opts?.resumeAt != null && opts.resumeAt > 0) url.searchParams.set('t', String(Math.floor(opts.resumeAt)));
+  return url.toString();
+}
+
 export const EMBED_SOURCES: EmbedSource[] = [
   {
+    id: 'vidsrc-sbs',
+    label: 'VidSrc.sbs',
+    getMovieUrl: (id, opts) => buildVidSrcSbsMovieUrl(id, opts),
+    getTVUrl: (id, s, e, opts) => buildVidSrcSbsTVUrl(id, s, e, opts),
+  },
+  {
     id: 'vidsrc',
-    label: 'VidSrc (Reliable)',
+    label: 'VidSrc.in',
     getMovieUrl: (id) => `https://vidsrc.in/embed/movie/${id}`,
     getTVUrl: (id, s, e) => `https://vidsrc.in/embed/tv/${id}/${s}/${e}`,
   },
@@ -69,7 +97,7 @@ const SOURCE_PREF_KEY = 'movietime_embed_source';
 
 export function getPreferredSourceId(): string {
   try {
-    return localStorage.getItem(SOURCE_PREF_KEY) || EMBED_SOURCES[0].id;
+    return localStorage.getItem(SOURCE_PREF_KEY) || EMBED_SOURCES[0].id; // defaults to 'vidsrc-sbs'
   } catch {
     return EMBED_SOURCES[0].id;
   }
