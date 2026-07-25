@@ -4,7 +4,7 @@ import { MovieRow } from '../components/MovieRow';
 import { MovieCard } from '../components/MovieCard';
 import { MoviePreviewModal } from '../components/MoviePreviewModal';
 import { fetchLatestMovies, fetchLatestTVShows } from '../lib/api';
-import { getContinueWatching, type WatchProgress } from '../lib/storage';
+import { getContinueWatching, WATCH_PROGRESS_EVENT, type WatchProgress } from '../lib/storage';
 import type { MovieItem, TVShowItem } from '../lib/api';
 
 const LazyPlayer = lazy(() => import('../components/Player'));
@@ -12,7 +12,7 @@ const LazyPlayer = lazy(() => import('../components/Player'));
 export function HomePage() {
   const [movies, setMovies] = useState<MovieItem[]>([]);
   const [tvShows, setTvShows] = useState<TVShowItem[]>([]);
-  const [continueWatching, setContinueWatching] = useState<WatchProgress[]>([]);
+  const [continueWatching, setContinueWatching] = useState<WatchProgress[]>(getContinueWatching);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedMovie, setSelectedMovie] = useState<MovieItem | null>(null);
@@ -62,6 +62,24 @@ export function HomePage() {
       }
     }
     loadData();
+
+    // Refresh continue watching when storage changes, user navigates back, or tab becomes visible
+    const refreshCW = () => setContinueWatching(getContinueWatching());
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refreshCW();
+    };
+    window.addEventListener('focus', refreshCW);
+    document.addEventListener('visibilitychange', handleVisibility);
+    // Also refresh on popstate (back/forward navigation)
+    window.addEventListener('popstate', refreshCW);
+    window.addEventListener(WATCH_PROGRESS_EVENT, refreshCW);
+
+    return () => {
+      window.removeEventListener('focus', refreshCW);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('popstate', refreshCW);
+      window.removeEventListener(WATCH_PROGRESS_EVENT, refreshCW);
+    };
   }, []);
 
   const heroItem = movies[0] || null;
@@ -101,6 +119,8 @@ export function HomePage() {
                     type={item.type}
                     progress={item.progress}
                     duration={item.duration}
+                    season={item.season}
+                    episode={item.episode}
                   />
                 </div>
               ))}

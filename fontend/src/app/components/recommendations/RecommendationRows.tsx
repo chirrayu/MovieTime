@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { MovieCard } from '../MovieCard';
 import { RecommendationCard } from './RecommendationCard';
 import type { ScoredRecommendation } from '../../lib/recommender';
-import { getContinueWatching } from '../../lib/storage';
+import { getContinueWatching, WATCH_PROGRESS_EVENT } from '../../lib/storage';
 import { useNavigate } from 'react-router';
 
 const SCROLL_DISTANCE = 600;
@@ -100,7 +100,7 @@ function RecommendationRow({ title, subtitle, recs, onCardClick }: Recommendatio
 
 function ContinueWatchingRow({ onCardClick }: { onCardClick: (item: any) => void }) {
   const navigate = useNavigate();
-  const items = getContinueWatching();
+  const [items, setItems] = useState(getContinueWatching());
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showLeft, setShowLeft] = useState(false);
   const [showRight, setShowRight] = useState(items.length > 6);
@@ -119,6 +119,14 @@ function ContinueWatchingRow({ onCardClick }: { onCardClick: (item: any) => void
     });
     setTimeout(updateArrows, SCROLL_TIMEOUT_MS);
   };
+
+  React.useEffect(() => {
+    const handleUpdate = () => {
+      setItems(getContinueWatching());
+    };
+    window.addEventListener(WATCH_PROGRESS_EVENT, handleUpdate);
+    return () => window.removeEventListener(WATCH_PROGRESS_EVENT, handleUpdate);
+  }, []);
 
   if (items.length === 0) return null;
 
@@ -177,6 +185,8 @@ function ContinueWatchingRow({ onCardClick }: { onCardClick: (item: any) => void
                 type={item.type}
                 progress={item.progress}
                 duration={item.duration}
+                season={item.season}
+                episode={item.episode}
                 onCardClick={() => {
                   if (item.type === 'movie') {
                     navigate(`/watch/movie/${item.id}`);

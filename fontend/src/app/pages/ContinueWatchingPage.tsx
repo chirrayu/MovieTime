@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { getContinueWatching, removeWatchProgress } from '../lib/storage';
+import { useEffect, useState } from 'react';
+import { getContinueWatching, removeWatchProgress, WATCH_PROGRESS_EVENT } from '../lib/storage';
 import { useNavigate } from 'react-router';
 import { Clock, Play, Trash2, X } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -7,6 +7,14 @@ import { motion } from 'motion/react';
 export function ContinueWatchingPage() {
   const [items, setItems] = useState(getContinueWatching());
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setItems(getContinueWatching());
+    };
+    window.addEventListener(WATCH_PROGRESS_EVENT, handleUpdate);
+    return () => window.removeEventListener(WATCH_PROGRESS_EVENT, handleUpdate);
+  }, []);
 
   const handlePlay = (item: typeof items[0]) => {
     if (item.type === 'movie') {
