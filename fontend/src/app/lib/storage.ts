@@ -44,6 +44,8 @@ const STORAGE_KEYS = {
 
 // ---- Watch Progress (Resume Playback) ----
 
+export const WATCH_PROGRESS_EVENT = 'movietime_watch_progress_updated';
+
 export interface WatchProgress {
   id: string; // imdb_id or tmdb_id
   type: 'movie' | 'tv';
@@ -67,6 +69,10 @@ export function saveWatchProgress(entry: WatchProgress): void {
   localStorage.setItem(STORAGE_KEYS.WATCH_PROGRESS, serialized);
   // Save to Cookie
   setCookie(STORAGE_KEYS.WATCH_PROGRESS, serialized);
+  // Notify listeners
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(WATCH_PROGRESS_EVENT));
+  }
 }
 
 export function getWatchProgress(id: string, season?: number, episode?: number): WatchProgress | null {
@@ -76,22 +82,27 @@ export function getWatchProgress(id: string, season?: number, episode?: number):
 }
 
 export function getAllWatchProgress(): Record<string, WatchProgress> {
+  let parsed = {};
   try {
-    // Attempt to load from Cookie first, fallback to localStorage
-    const cookieRaw = getCookie(STORAGE_KEYS.WATCH_PROGRESS);
-    if (cookieRaw) {
-      return JSON.parse(cookieRaw);
-    }
+    // Prefer localStorage as it has higher capacity
     const raw = localStorage.getItem(STORAGE_KEYS.WATCH_PROGRESS);
-    const parsed = raw ? JSON.parse(raw) : {};
-    // Keep them synced if local storage has data but cookie didn't
     if (raw) {
-      setCookie(STORAGE_KEYS.WATCH_PROGRESS, raw);
+      parsed = JSON.parse(raw);
+    } else {
+      // Fallback to cookie only if local storage is empty
+      const cookieRaw = getCookie(STORAGE_KEYS.WATCH_PROGRESS);
+      if (cookieRaw) {
+        parsed = JSON.parse(cookieRaw);
+        // Sync it back to local storage
+        localStorage.setItem(STORAGE_KEYS.WATCH_PROGRESS, cookieRaw);
+      }
     }
-    return parsed;
-  } catch {
+  } catch (e) {
+    console.warn("Error parsing watch progress, clearing corrupted data.", e);
+    // If both failed or parsing failed, start fresh
     return {};
   }
+  return parsed;
 }
 
 export function getContinueWatching(): WatchProgress[] {
@@ -100,7 +111,7 @@ export function getContinueWatching(): WatchProgress[] {
     .filter(p => {
       // Only show items not finished (less than 95% watched)
       const percent = p.duration > 0 ? (p.progress / p.duration) * 100 : 0;
-      return percent < 95 && percent > 2;
+      return percent < 95 && percent >= 0;
     })
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, 20);
@@ -165,21 +176,26 @@ export function isInWatchlist(id: string): boolean {
 }
 
 export function getWatchlist(): WatchlistItem[] {
+  let parsed: WatchlistItem[] = [];
   try {
-    // Attempt to load from Cookie first, fallback to localStorage
-    const cookieRaw = getCookie(STORAGE_KEYS.WATCHLIST);
-    if (cookieRaw) {
-      return JSON.parse(cookieRaw);
-    }
+    // Prefer localStorage as it has higher capacity
     const raw = localStorage.getItem(STORAGE_KEYS.WATCHLIST);
-    const parsed = raw ? JSON.parse(raw) : [];
     if (raw) {
-      setCookie(STORAGE_KEYS.WATCHLIST, raw);
+      parsed = JSON.parse(raw);
+    } else {
+      // Fallback to cookie only if local storage is empty
+      const cookieRaw = getCookie(STORAGE_KEYS.WATCHLIST);
+      if (cookieRaw) {
+        parsed = JSON.parse(cookieRaw);
+        // Sync it back to local storage
+        localStorage.setItem(STORAGE_KEYS.WATCHLIST, cookieRaw);
+      }
     }
-    return parsed;
-  } catch {
+  } catch (e) {
+    console.warn("Error parsing watchlist, clearing corrupted data.", e);
     return [];
   }
+  return parsed;
 }
 
 export function getLikedItems(): LikedItem[] {

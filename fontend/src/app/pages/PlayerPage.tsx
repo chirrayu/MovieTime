@@ -369,6 +369,8 @@ export function PlayerPage({ type }: PlayerPageProps) {
             } else {
               setCurrentDuration(120 * 60); // 2 hours default fallback
             }
+          } else {
+            setPlayerTitle('Unknown Movie');
           }
         } else {
           const detail = await getTVDetails(id!);
@@ -380,11 +382,14 @@ export function PlayerPage({ type }: PlayerPageProps) {
             setPlayerGenres(genresString);
             // Default TV episode duration: 45 minutes
             setCurrentDuration(45 * 60);
+          } else {
+            setPlayerTitle('Unknown TV Show');
           }
         }
       } catch (err) {
         console.error('Failed to load meta:', err);
         setCurrentDuration(120 * 60);
+        setPlayerTitle('Unknown Content');
       }
     }
     loadMeta();
@@ -1157,9 +1162,21 @@ export function PlayerPage({ type }: PlayerPageProps) {
   // Setup player event listener for progress & state tracking
   useEffect(() => {
     if (!id) return;
+    
+    let receivedEvents = false;
+    let localProgress = 0;
+    // Default duration fallback: 120 mins for movies, 45 mins for TV
+    const fallbackDuration = type === 'movie' ? 120 * 60 : 45 * 60;
+    
+    // Load initial progress if any
+    const existing = getWatchProgress(id, seasonNum, episodeNum);
+    if (existing) {
+      localProgress = existing.progress;
+    }
 
     const cleanup = setupPlayerListener({
       onProgress: (progress, duration, info) => {
+        receivedEvents = true;
         if (isRemoteUpdate.current) return;
         setIsPlaying(true);
         setLocalIsPlaying(true);
@@ -1179,17 +1196,20 @@ export function PlayerPage({ type }: PlayerPageProps) {
           );
         }
 
-        saveWatchProgress({
-          id,
-          type,
-          title: info?.title || playerTitle || 'Unknown',
-          poster: info?.poster || playerPoster || '',
-          progress,
-          duration,
-          timestamp: Date.now(),
-          season: seasonNum,
-          episode: episodeNum,
-        });
+        const resolvedTitle = info?.title || playerTitle;
+        if (resolvedTitle) {
+          saveWatchProgress({
+            id,
+            type,
+            title: resolvedTitle,
+            poster: info?.poster || playerPoster || '',
+            progress,
+            duration,
+            timestamp: Date.now(),
+            season: seasonNum,
+            episode: episodeNum,
+          });
+        }
       },
       onPause: (progress) => {
         if (isRemoteUpdate.current) return;
@@ -1220,7 +1240,37 @@ export function PlayerPage({ type }: PlayerPageProps) {
       },
     });
 
-    return cleanup;
+    // Fallback polling for external iframes that don't emit PLAYER_EVENT
+    const saveFallback = (prog: number) => {
+      saveWatchProgress({
+        id,
+        type,
+        title: playerTitle,
+        poster: playerPoster || '',
+        progress: prog,
+        duration: fallbackDuration,
+        timestamp: Date.now(),
+        season: seasonNum,
+        episode: episodeNum,
+      });
+    };
+
+    if (playerTitle && !receivedEvents) {
+      // Save immediately once title is loaded
+      saveFallback(localProgress);
+    }
+
+    const fallbackTimer = setInterval(() => {
+      if (!receivedEvents && playerTitle) {
+        localProgress += 1; // tick 1 second
+        saveFallback(localProgress);
+      }
+    }, 1000);
+
+    return () => {
+      cleanup();
+      clearInterval(fallbackTimer);
+    };
   }, [id, type, seasonNum, episodeNum, playerTitle, playerPoster, prefs.autoNextEpisode, navigate, roomId, playerGenres]);
 
   // Auto-hide player controls
@@ -1385,18 +1435,11 @@ export function PlayerPage({ type }: PlayerPageProps) {
       >
         {/* Video Player Iframe */}
         <div className="watch-player-embed absolute inset-0 z-0" onMouseMove={resetControlsTimeout} onClick={resetControlsTimeout}>
+          {/* sandbox attribute intentionally omitted — VaPlayer blocks sandboxed frames */}
           <iframe
             ref={iframeRef}
             src={embedUrl}
             className="border-0 w-full h-full absolute inset-0"
-            sandbox={
-              adBlockEnabled
-                // Ad-block: drop allow-same-origin to restrict ad network requests
-                ? "allow-scripts allow-forms allow-presentation allow-pointer-lock allow-popups"
-                // Normal: full playback permissions — but NO allow-top-navigation,
-                // which blocks the embed from redirecting the parent page to its own site
-                : "allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock allow-popups"
-            }
             allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
             allowFullScreen
             title={type === 'movie' ? 'Movie Player' : `S${seasonNum}E${episodeNum}`}

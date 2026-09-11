@@ -18,12 +18,14 @@ interface MovieCardProps {
   // For continue watching
   progress?: number;
   duration?: number;
+  season?: number;
+  episode?: number;
   // Optional callback when the card is clicked (used for preview modal)
   onCardClick?: (movie: MovieCardProps) => void;
   personalizedPoster?: string;
 }
 
-export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, genre, type, progress, duration, onCardClick, personalizedPoster }: MovieCardProps) {
+export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, genre, type, progress, duration, season, episode, onCardClick, personalizedPoster }: MovieCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [inList, setInList] = useState(isInWatchlist(tmdb_id || imdb_id));
   const [previewVideoKey, setPreviewVideoKey] = useState<string | null>(null);
@@ -67,9 +69,11 @@ export function MovieCard({ tmdb_id, imdb_id, title, year, rating, poster_url, g
     e.stopPropagation();
     if (type === 'movie') {
       navigate(`/watch/movie/${imdb_id || tmdb_id}`);
+    } else if (season != null && episode != null) {
+      navigate(`/watch/tv/${tmdb_id || imdb_id}/${season}/${episode}`);
     } else {
-      // For TV, go to detail page to pick episode
-      navigate(`/tv/${tmdb_id}`);
+      // For TV without specific episode info, go to detail page to pick episode
+      navigate(`/tv/${tmdb_id || imdb_id}`);
     }
   };
 
