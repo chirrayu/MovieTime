@@ -1435,18 +1435,11 @@ export function PlayerPage({ type }: PlayerPageProps) {
       >
         {/* Video Player Iframe */}
         <div className="watch-player-embed absolute inset-0 z-0" onMouseMove={resetControlsTimeout} onClick={resetControlsTimeout}>
+          {/* sandbox attribute intentionally omitted — VaPlayer blocks sandboxed frames */}
           <iframe
             ref={iframeRef}
             src={embedUrl}
             className="border-0 w-full h-full absolute inset-0"
-            sandbox={
-              adBlockEnabled
-                // Ad-block: drop allow-same-origin to restrict ad network requests
-                ? "allow-scripts allow-forms allow-presentation allow-pointer-lock allow-popups"
-                // Normal: full playback permissions — but NO allow-top-navigation,
-                // which blocks the embed from redirecting the parent page to its own site
-                : "allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock allow-popups"
-            }
             allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
             allowFullScreen
             title={type === 'movie' ? 'Movie Player' : `S${seasonNum}E${episodeNum}`}

@@ -1,40 +1,75 @@
 // ============================
-// VidAPI & TMDB API Integration
+// VidAPI & VaPlayer API Integration
 // ============================
 
-// VidSrc.sbs — embed player
-const VIDSRC_SBS_BASE = 'https://vidsrc.sbs';
+// VaPlayer — embed player
+const VAPLAYER_BASE = 'https://vaplayer.ru';
+
+// VidAPI — paginated content listings
+const VIDAPI_BASE = 'https://vidapi.ru';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 
 // ---- Embed Options ----
 
 export interface EmbedOptions {
+  /** Resume playback from this many seconds (applied as ?resumeAt=) */
   resumeAt?: number;
+  /** Player UI accent color — hex with # (e.g. '#E50914') */
   primaryColor?: string;
+  /** Default subtitle language for OpenSubtitles auto-search (ISO 639-1 or 3-letter code, e.g. 'en') */
   lang?: string;
+  /** Force autoplay on */
   autoplay?: boolean;
+  /** Custom title to display in the player overlay */
   title?: string;
+  /** Custom poster/thumbnail URL */
   poster?: string;
+  /** URL-encoded remote subtitle file (.srt or .vtt) */
+  subUrl?: string;
+  /** Subtitle track label */
+  subLabel?: string;
+  /** Subtitle language code (default: 'en') */
+  subLang?: string;
+  /** Set subtitle as default track */
+  subDefault?: boolean;
+  /** Show/hide the player control bar */
+  controls?: boolean;
+  /** Show/hide the hover gradient overlay and title area */
+  overlay?: boolean;
 }
 
-function buildVidSrcSbsMovieUrl(id: string, opts?: EmbedOptions): string {
-  const url = new URL(`${VIDSRC_SBS_BASE}/embed/movie/${id}`);
-  const color = (opts?.primaryColor || '#E50914').replace('#', '');
-  url.searchParams.set('color', color);
-  if (opts?.lang) url.searchParams.set('sub', opts.lang);
+function buildVaPlayerMovieUrl(id: string, opts?: EmbedOptions): string {
+  const url = new URL(`${VAPLAYER_BASE}/embed/movie/${id}`);
+  if (opts?.primaryColor) url.searchParams.set('primaryColor', opts.primaryColor);
+  if (opts?.title) url.searchParams.set('title', opts.title);
+  if (opts?.poster) url.searchParams.set('poster', opts.poster);
   if (opts?.autoplay) url.searchParams.set('autoplay', '1');
-  if (opts?.resumeAt != null && opts.resumeAt > 0) url.searchParams.set('t', String(Math.floor(opts.resumeAt)));
+  if (opts?.resumeAt != null && opts.resumeAt > 0) url.searchParams.set('resumeAt', String(Math.floor(opts.resumeAt)));
+  if (opts?.lang) url.searchParams.set('lang', opts.lang);
+  if (opts?.subUrl) url.searchParams.set('sub_url', opts.subUrl);
+  if (opts?.subLabel) url.searchParams.set('sub_label', opts.subLabel);
+  if (opts?.subLang) url.searchParams.set('sub_lang', opts.subLang);
+  if (opts?.subDefault) url.searchParams.set('sub_default', 'true');
+  if (opts?.controls === false) url.searchParams.set('controls', 'false');
+  if (opts?.overlay === false) url.searchParams.set('overlay', 'false');
   return url.toString();
 }
 
-function buildVidSrcSbsTVUrl(id: string, season: number, episode: number, opts?: EmbedOptions): string {
-  const url = new URL(`${VIDSRC_SBS_BASE}/embed/tv/${id}/${season}/${episode}`);
-  const color = (opts?.primaryColor || '#E50914').replace('#', '');
-  url.searchParams.set('color', color);
-  if (opts?.lang) url.searchParams.set('sub', opts.lang);
+function buildVaPlayerTVUrl(id: string, season: number, episode: number, opts?: EmbedOptions): string {
+  const url = new URL(`${VAPLAYER_BASE}/embed/tv/${id}/${season}/${episode}`);
+  if (opts?.primaryColor) url.searchParams.set('primaryColor', opts.primaryColor);
+  if (opts?.title) url.searchParams.set('title', opts.title);
+  if (opts?.poster) url.searchParams.set('poster', opts.poster);
   if (opts?.autoplay) url.searchParams.set('autoplay', '1');
-  if (opts?.resumeAt != null && opts.resumeAt > 0) url.searchParams.set('t', String(Math.floor(opts.resumeAt)));
+  if (opts?.resumeAt != null && opts.resumeAt > 0) url.searchParams.set('resumeAt', String(Math.floor(opts.resumeAt)));
+  if (opts?.lang) url.searchParams.set('lang', opts.lang);
+  if (opts?.subUrl) url.searchParams.set('sub_url', opts.subUrl);
+  if (opts?.subLabel) url.searchParams.set('sub_label', opts.subLabel);
+  if (opts?.subLang) url.searchParams.set('sub_lang', opts.subLang);
+  if (opts?.subDefault) url.searchParams.set('sub_default', 'true');
+  if (opts?.controls === false) url.searchParams.set('controls', 'false');
+  if (opts?.overlay === false) url.searchParams.set('overlay', 'false');
   return url.toString();
 }
 
@@ -176,11 +211,11 @@ export function tmdbPoster(path: string | null, size: 'w200' | 'w342' | 'w500' |
 // ---- Embed URL Builders ----
 
 export function getMovieEmbedUrl(id: string, options?: EmbedOptions): string {
-  return buildVidSrcSbsMovieUrl(id, { primaryColor: '#E50914', ...options });
+  return buildVaPlayerMovieUrl(id, { primaryColor: '#E50914', ...options });
 }
 
 export function getTVEmbedUrl(id: string, season: number, episode: number, options?: EmbedOptions): string {
-  return buildVidSrcSbsTVUrl(id, season, episode, { primaryColor: '#E50914', ...options });
+  return buildVaPlayerTVUrl(id, season, episode, { primaryColor: '#E50914', ...options });
 }
 
 // ---- Listing Endpoints ----
@@ -188,7 +223,7 @@ export function getTVEmbedUrl(id: string, season: number, episode: number, optio
 export async function fetchLatestMovies(page: number = 1): Promise<PaginatedResponse<MovieItem>> {
   try {
     const data = await fetchVidLatestMovies(page);
-    // Re-stamp embed URLs so VidSrc.sbs options (color, etc.) are applied
+    // Re-stamp embed URLs so VaPlayer options (color, etc.) are applied
     data.items = data.items.map(m => ({
       ...m,
       embed_url: getMovieEmbedUrl(m.imdb_id || m.tmdb_id),
